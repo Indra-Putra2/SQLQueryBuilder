@@ -1,6 +1,7 @@
 ﻿using Dapper;
 using SQLQueryBuilder.Attributes;
 using SQLQueryBuilder.Model;
+using SQLQueryBuilder.Model.Enum;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Linq.Expressions;
@@ -24,7 +25,7 @@ namespace SQLQueryBuilder.SQLBuilder
         private Dictionary<Type, string> _primaryKeys = new();
         private Dictionary<Type, Dictionary<Type, string>> _foreignKeys = new();
         private int _index = 0;
-        private SQLInfo? _sqlInfo;
+        private OldSQLInfo? _sqlInfo;
 
         public void BuildColumnSet<T>()
         {
@@ -69,7 +70,7 @@ namespace SQLQueryBuilder.SQLBuilder
             Reset();
             var type = EnsureColumnSet<T>();
             var columns = _columnMaps[type].Values.ToList();
-            _sqlInfo = new SQLInfo()
+            _sqlInfo = new OldSQLInfo()
             {
                 Type = type,
                 TableName = GetTableName(type),
@@ -78,7 +79,6 @@ namespace SQLQueryBuilder.SQLBuilder
             };
             return this;
         }
-
         public SQLBuilder Select<T>(Expression<Func<T, object>> expression, string? alias = null)
         {
             Reset();
@@ -86,7 +86,7 @@ namespace SQLQueryBuilder.SQLBuilder
             List<(string source, string alias)> columns = GetSelectedColumns(expression);
             var finalColumns = MapAlias<T>(columns);
 
-            _sqlInfo = new SQLInfo()
+            _sqlInfo = new OldSQLInfo()
             {
                 Type = type,
                 TableName = GetTableName(type),
@@ -95,7 +95,6 @@ namespace SQLQueryBuilder.SQLBuilder
             };
             return this;
         }
-
         public SQLBuilder Where(Expr expr)
         {
             _index = 0;
@@ -109,7 +108,7 @@ namespace SQLQueryBuilder.SQLBuilder
             var finalColumns = MapAlias<TJoin>(columns);
 
             var joinType = typeof(TJoin);
-            var join = new JoinInfo()
+            var join = new OldJoinInfo()
             {
                 Type = joinType,
                 TableName = GetTableName(joinType),
@@ -133,7 +132,7 @@ namespace SQLQueryBuilder.SQLBuilder
 
             if(_sqlInfo.Joins == null) 
             { 
-                _sqlInfo.Joins = new List<JoinInfo>();
+                _sqlInfo.Joins = new List<OldJoinInfo>();
             }
 
             var existing = _sqlInfo.Joins.FirstOrDefault(j =>
@@ -235,7 +234,6 @@ namespace SQLQueryBuilder.SQLBuilder
                 _ => op
             };
         }
-
         private object FormatValue(string op, object value)
         {
             if (op == ":")
@@ -245,7 +243,6 @@ namespace SQLQueryBuilder.SQLBuilder
 
             return value;
         }
-
         private void Reset()
         {
             _sqlInfo = null;

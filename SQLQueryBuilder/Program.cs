@@ -10,27 +10,37 @@ var lexer = new Lexer();
 List<Token> Tokens = new Lexer().Tokenize(input);
 var parser = new Parser(Tokens);
 var ast = parser.Parse();
+var query = new Query<RamData>();
+query.Select(r => new { r.Name, r.MemoryType },"r")
+    .Join<Brand>((r, b) => r.BrandID == b.id, b => new {b.id,b.Name},SQLQueryBuilder.Model.Enum.JoinType.INNER, "b");
+(string sql, DynamicParameters param) result = query.Build();
+Console.WriteLine(result.sql);
 var builder = new SQLBuilder();
-builder.BuildColumnSet<RamData>();
-builder.BuildColumnSet<Brand>();
-try
-{
-    (string sql, DynamicParameters param) = builder
-        .Select<RamData>(r=> new
-        {
-            RamName = r.Name,
-            RamType = r.MemoryType,
-        },alias:"p")
-        .Join<Brand>(b => new RamData
-        {
-            BrandName = b.Name,
-            BrandID = b.id
-        }, alias:"b")
-        .Where(ast)
-        .Build();
-    Console.WriteLine($"{sql}");
-}
-catch (Exception ex)
-{
-    Console.WriteLine(ex.Message);
-}
+//builder.BuildColumnSet<RamData>();
+//builder.BuildColumnSet<Brand>();
+//try
+//{
+//    (string sql, DynamicParameters param) = builder
+//        .Select<RamData>(r=> new
+//        {
+//            RamName = r.Name,
+//            RamType = r.MemoryType,
+//        },alias:"r")
+//        .Join<Brand>(b => new RamData
+//        {
+//            BrandName = b.Name,
+//            BrandID = b.id
+//        }, alias:"b")
+//        .Join<Test>(t => new Brand
+//        {
+//            Name = t.TestNew,
+//            id = t.id,
+//        }, alias:"t")
+//        .Where(ast)
+//        .Build();
+//    Console.WriteLine($"{sql}");
+//}
+//catch (Exception ex)
+//{
+//    Console.WriteLine(ex.Message);
+//}
