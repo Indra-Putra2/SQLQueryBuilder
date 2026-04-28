@@ -34,13 +34,35 @@ namespace SQLQueryBuilder.SQLBuilder
             JoinType joinType = JoinType.INNER,
             string tableAlias = null)
         {
-            (var leftName, var rightName) = GetOnClause(on);
+            
+            (var left, var right) = GetOnClause(on);
             var newColumns = GetColumns(select);
+
+            JoinOnInfo leftInfo = null;
+            JoinOnInfo rightInfo = null;
+
+            var leftIsPrime = left.type == typeof(TPrime);
+            var rightIsPrime = right.type == typeof(TPrime);
+
+            if (leftIsPrime && !rightIsPrime)
+            {
+                leftInfo = BuildJoinInfo(left.type,_sqlInfo.TableInfo.Name,left.colName,_sqlInfo.TableInfo.Alias);
+                rightInfo = BuildJoinInfo(right.type,GetTableName(right.type),right.colName,tableAlias);
+            }
+            else if (!leftIsPrime && rightIsPrime)
+            {
+                leftInfo = BuildJoinInfo(left.type, GetTableName(left.type), left.colName, tableAlias);
+                rightInfo = BuildJoinInfo(right.type, _sqlInfo.TableInfo.Name, right.colName,_sqlInfo.TableInfo.Alias);
+            }
+            else
+            {
+                throw new InvalidOperationException("Invalid join expression. Must join TPrime with TJoin.");
+            }
 
             _sqlInfo.JoinInfo ??= new HashSet<JoinInfo>();
 
             // 1. Check if we already have a join for these tables with this type
-            var existingJoin = _sqlInfo.JoinInfo.FirstOrDefault(j => j.IsMatch(leftName, rightName, joinType, tableAlias));
+            var existingJoin = _sqlInfo.JoinInfo.FirstOrDefault(j => j.IsMatch(leftInfo, rightInfo, joinType, tableAlias));
 
             if (existingJoin != null)
             {
@@ -52,10 +74,8 @@ namespace SQLQueryBuilder.SQLBuilder
                 // 3. New join: Create it and assign new aliases
                 var joinInfo = new JoinInfo()
                 {
-                    TableName = typeof(TJoin).Name,
-                    Alias = tableAlias,
-                    LeftColumn = leftName,
-                    RightColumn = rightName,
+                    LeftColumn = leftInfo,
+                    RightColumn = rightInfo,
                     SelectedColumns = newColumns,
                     JoinType = joinType
                 };
@@ -64,11 +84,20 @@ namespace SQLQueryBuilder.SQLBuilder
 
             return this;
         }
+        private JoinOnInfo BuildJoinInfo(Type type, string tableName, string colName, string alias)
+        {
+            return new JoinOnInfo()
+            {
+                TableType = type,
+                TableName = tableName,
+                ColumnName = colName,
+                Alias = alias
+            };
+        }
         public IQueryAfterSelect<TPrime> Where(Expr expr)
         {
             return this;
         }
-
         public (string sql, DynamicParameters parameters) Build()
         {
             //Primary Table
@@ -78,22 +107,28 @@ namespace SQLQueryBuilder.SQLBuilder
             string primaryColumns = 
                 string.Join(",", _sqlInfo.SelectedColumn.Select(c => { return $"\n{primaryTableAlias??primaryTable}.{c}"; }));
 
-            string joinColumns = string.Join(",", _sqlInfo.JoinInfo.Select(j =>
+            string joinColumns = string.Join(",\n", _sqlInfo.JoinInfo.Select(j =>
             {
-                string name = j.Alias ?? j.TableName;
+                string name = j.LeftColumn.Alias ?? j.LeftColumn.ColumnName;
                 return string.Join(",\n",j.SelectedColumns.Select(c => $"{name}.{c}"));
             }));
 
             // Inside Build()
             string joinClause = string.Join("\n", _sqlInfo.JoinInfo.Select(j =>
             {
-                string targetTable = j.Alias == null ? j.TableName : $"{j.TableName} AS {j.Alias}";
-                string targetIdentifier = j.Alias ?? j.TableName;
-                string sourceIdentifier = _sqlInfo.TableInfo.Alias ?? _sqlInfo.TableInfo.Name;
+                var tablePart = string.IsNullOrWhiteSpace(j.LeftColumn.Alias)
+                    ? j.LeftColumn.TableName
+                    : $"{j.LeftColumn.TableName} AS {j.LeftColumn.Alias}";
 
-                // Based on (b, r) => b.id == r.BrandID:
-                // b.id is j.LeftColumn, r.BrandID is j.RightColumn
-                return $"{j.JoinType} JOIN {targetTable} ON {targetIdentifier}.{j.LeftColumn} = {sourceIdentifier}.{j.RightColumn}";
+                var leftAlias = string.IsNullOrWhiteSpace(j.LeftColumn.Alias)
+                    ? j.LeftColumn.TableName
+                    : j.LeftColumn.Alias;
+
+                var rightAlias = string.IsNullOrWhiteSpace(j.RightColumn.Alias)
+                    ? j.RightColumn.TableName
+                    : j.RightColumn.Alias;
+
+                return $"{j.JoinType} JOIN {tablePart} ON {leftAlias}.{j.LeftColumn.ColumnName} = {rightAlias}.{j.RightColumn.ColumnName}";
             }));
 
             string sql = $"SELECT {primaryColumns},\n{joinColumns}\nFROM {fromClause}\n{joinClause}";
@@ -120,10 +155,11 @@ namespace SQLQueryBuilder.SQLBuilder
             Visit(expression);
             return columns;
         }
-        private (string left, string right) GetOnClause(Expression expression)
+        private ((Type type, string colName), (Type type, string colName)) GetOnClause(Expression expression)
         {
-            string left = string.Empty;
-            string right = string.Empty;
+            (Type type, string colName) left = default;
+            (Type type, string colName) right = default;
+            bool assigned = false;
 
             void Visit(Expression exp)
             {
@@ -137,12 +173,17 @@ namespace SQLQueryBuilder.SQLBuilder
                 }
                 else if (exp is BinaryExpression binary)
                 {
-                    left = GetMemberName(binary.Left);
-                    right = GetMemberName(binary.Right);
+                    left = GetMemberInfo(binary.Left);
+                    right = GetMemberInfo(binary.Right);
+                    assigned = true;
                 }
             }
 
             Visit(expression);
+
+            if (!assigned)
+                throw new InvalidOperationException("No binary expression found in ON clause.");
+
             return (left, right);
         }
         private string GetMemberName(Expression expression)
@@ -152,6 +193,15 @@ namespace SQLQueryBuilder.SQLBuilder
                 return GetColumnName(member.Member.DeclaringType, member.Member.Name);
             }
             return string.Empty;
+        }
+        private (Type owner, string name) GetMemberInfo(Expression expression)
+        {
+            if (expression is MemberExpression member)
+            {
+                var colName = GetColumnName(member.Member.DeclaringType, member.Member.Name);
+                return (member.Member.DeclaringType, colName);
+            }
+            return (null, string.Empty);
         }
         private string GetTableName(Type TableType) => TableType.GetCustomAttribute<TableAttribute>()?.Name ?? TableType.Name;
         private string GetColumnName(Type classType, string propertyName)

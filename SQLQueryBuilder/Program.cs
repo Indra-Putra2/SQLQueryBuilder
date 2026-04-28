@@ -11,8 +11,9 @@ List<Token> Tokens = new Lexer().Tokenize(input);
 var parser = new Parser(Tokens);
 var ast = parser.Parse();
 var query = new Query<RamData>();
-query.Select(r => new { r.Name, r.MemoryType },"r")
-    .Join<Brand>((r, b) => r.BrandID == b.id, b => new {b.id,b.Name},SQLQueryBuilder.Model.Enum.JoinType.INNER, "b");
+query.Select(r => new { r.Name, r.MemoryType }, "r")
+    .Join<Test>((r, t) => r.BrandID == t.id, t => new { t.id, t.Name }, SQLQueryBuilder.Model.Enum.JoinType.LEFT)
+    .Join<Test>((r, t) => r.BrandID == t.id, t => new { t.id, t.TestNew }, SQLQueryBuilder.Model.Enum.JoinType.LEFT);
 (string sql, DynamicParameters param) result = query.Build();
 Console.WriteLine(result.sql);
 var builder = new SQLBuilder();
