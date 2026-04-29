@@ -1,4 +1,4 @@
-﻿using SQLQueryBuilder.Model;
+﻿using SQLQueryBuilder.Model.ASTModel;
 
 namespace SQLQueryBuilder.Lexer
 {

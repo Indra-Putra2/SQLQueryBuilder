@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using SQLQueryBuilder.Model.DataModel;
 
 namespace SQLQueryBuilder.Model
 {

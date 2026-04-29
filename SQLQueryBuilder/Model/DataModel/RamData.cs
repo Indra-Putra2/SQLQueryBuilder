@@ -1,7 +1,7 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace SQLQueryBuilder.Model
+namespace SQLQueryBuilder.Model.DataModel
 {
     [Table("Products")]
     public class RamData
@@ -10,11 +10,8 @@ namespace SQLQueryBuilder.Model
         public int id { get; set; }
         [ForeignKey("BrandID")]
         public virtual Brand Brand { get; set; }
-        [ForeignKey("TestID")]
-        public virtual Test Test { get; set; }
         public string TestName { get; set; }
         public string BrandName { get; set; }
-        [Column("Column_Name_Test")]
         public string Name { get; set; }
         public int BrandID { get; set; }
         public int TestID { get; set; }

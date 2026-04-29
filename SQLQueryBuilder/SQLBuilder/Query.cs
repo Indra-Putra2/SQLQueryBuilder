@@ -1,7 +1,8 @@
 ﻿using Dapper;
-using SQLQueryBuilder.Model;
+using SQLQueryBuilder.Model.ASTModel;
 using SQLQueryBuilder.Model.Enum;
 using SQLQueryBuilder.Model.Interface;
+using SQLQueryBuilder.Model.SQLBuilderModel;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -11,133 +12,176 @@ namespace SQLQueryBuilder.SQLBuilder
     public class Query<TPrime> : IQuerySelect<TPrime>, IQueryAfterSelect<TPrime>
     {
         private SQLInfo _sqlInfo;
-        public IQueryAfterSelect<TPrime> Select(Expression<Func<TPrime, object>> selectExpr = null, string tableAlias = null)
+        private int _count = 0;
+        private int _index = 0;
+        public IQueryAfterSelect<TPrime> Select(Expression<Func<TPrime, object>> selectExpr = null)
         {
-            var tableName = GetTableName(typeof(TPrime));
-            var alias = tableAlias ?? tableName;
+            Reset();
+            var type = typeof(TPrime);
+            var tableName = GetTableName(type);
             var columns = GetColumns(selectExpr);
 
             _sqlInfo = new()
             {
-                TableInfo = new TableInfo()
+                Root = new TableRef()
                 {
+                    Type = type,
                     Name = tableName,
-                    Alias = alias
+                    Alias = $"t{_count++}",
                 },
-                SelectedColumn = columns
             };
+            _sqlInfo.SelectedColumns.UnionWith(columns);
             return this;
         }
         public IQueryAfterSelect<TPrime> Join<TJoin>(
             Expression<Func<TPrime, TJoin, bool>> on,
-            Expression<Func<TJoin, object>> select,
-            JoinType joinType = JoinType.INNER,
-            string tableAlias = null)
+            Expression<Func<TJoin, object>> select = null,
+            Expression<Func<TPrime, object>> map = null,
+            JoinType joinType = JoinType.INNER)
         {
-            
-            (var left, var right) = GetOnClause(on);
-            var newColumns = GetColumns(select);
 
-            JoinOnInfo leftInfo = null;
-            JoinOnInfo rightInfo = null;
+            var (leftExp, rightExp) = GetOnClause(on);
 
-            var leftIsPrime = left.type == typeof(TPrime);
-            var rightIsPrime = right.type == typeof(TPrime);
+            var leftType = leftExp.type;
+            var rightType = rightExp.type;
 
-            if (leftIsPrime && !rightIsPrime)
+            bool leftRoot = IsTableRoot(leftType);
+            bool RightRoot = IsTableRoot(rightType);
+
+            var joinTableExist = false;
+
+            TableRef fromTable;
+            TableRef toTable;
+            string fromColumn;
+            string toColumn;
+
+            if (leftRoot && !RightRoot)
             {
-                leftInfo = BuildJoinInfo(left.type,_sqlInfo.TableInfo.Name,left.colName,_sqlInfo.TableInfo.Alias);
-                rightInfo = BuildJoinInfo(right.type,GetTableName(right.type),right.colName,tableAlias);
+                fromTable = ResolveRootTable(leftType);
+                (toTable, joinTableExist) = ResolveOrCreateTable(rightType);
+                fromColumn = leftExp.column;
+                toColumn = rightExp.column;
             }
-            else if (!leftIsPrime && rightIsPrime)
+            else if (!leftRoot && RightRoot)
             {
-                leftInfo = BuildJoinInfo(left.type, GetTableName(left.type), left.colName, tableAlias);
-                rightInfo = BuildJoinInfo(right.type, _sqlInfo.TableInfo.Name, right.colName,_sqlInfo.TableInfo.Alias);
-            }
-            else
-            {
-                throw new InvalidOperationException("Invalid join expression. Must join TPrime with TJoin.");
-            }
-
-            _sqlInfo.JoinInfo ??= new HashSet<JoinInfo>();
-
-            // 1. Check if we already have a join for these tables with this type
-            var existingJoin = _sqlInfo.JoinInfo.FirstOrDefault(j => j.IsMatch(leftInfo, rightInfo, joinType, tableAlias));
-
-            if (existingJoin != null)
-            {
-                // 2. Duplicate found: Just merge the columns into the existing pool
-                existingJoin.UnionColumns(newColumns);
+                fromTable = ResolveRootTable(rightType);
+                (toTable, joinTableExist) = ResolveOrCreateTable(leftType);
+                fromColumn = rightExp.column;
+                toColumn = leftExp.column;
             }
             else
             {
-                // 3. New join: Create it and assign new aliases
-                var joinInfo = new JoinInfo()
+                throw new Exception($"Table {typeof(TJoin).Name} already joined. Use aliasing for multiple joins.");
+            }
+
+            JoinInfo joinInfo = null;
+
+            if (!joinTableExist)
+            {
+                joinInfo = new JoinInfo()
                 {
-                    LeftColumn = leftInfo,
-                    RightColumn = rightInfo,
-                    SelectedColumns = newColumns,
+                    From = fromTable,
+                    To = toTable,
+                    On = new JoinCondition()
+                    {
+                        FromColumn = fromColumn,
+                        ToColumn = toColumn,
+                    },
                     JoinType = joinType
                 };
-                _sqlInfo.JoinInfo.Add(joinInfo);
             }
-
-            return this;
-        }
-        private JoinOnInfo BuildJoinInfo(Type type, string tableName, string colName, string alias)
-        {
-            return new JoinOnInfo()
+            else
             {
-                TableType = type,
-                TableName = tableName,
-                ColumnName = colName,
-                Alias = alias
-            };
+                joinInfo = _sqlInfo.Joins.First(j => j.To.Type == typeof(TJoin));
+                if (joinInfo.JoinType != joinType)
+                {
+                    throw new Exception(
+                        $"Conflicting join types for {typeof(TJoin).Name}: " +
+                        $"{joinInfo.JoinType} vs {joinType}");
+                }
+            }
+            var columns = GetColumns(select);
+            var columnMap = GetColumns(map);
+
+            joinInfo!.SelectedColumns.UnionWith(columns);
+            joinInfo!.AddMaps(columnMap);
+
+            if (!joinTableExist) _sqlInfo.Joins.Add(joinInfo);
+            return this;
         }
         public IQueryAfterSelect<TPrime> Where(Expr expr)
         {
+            var parameters = new DynamicParameters();
+
+            string Visit(Expr expr)
+            {
+                if (expr is BinaryExpr binary)
+                {
+                    var left = Visit(binary.Left);
+                    var right = Visit(binary.Right);
+                    return $"({left} {binary.Op} {right})";
+                }
+                else if (expr is ComparisonExpr comparison)
+                {
+                    var column = GetColumnName(typeof(TPrime), comparison.Identifier);
+                    if (column == null)
+                    {
+                        throw new InvalidFilterCriteriaException($"Cannot Find Column With The Name {comparison.Identifier}");
+                    }
+                    var param = $"@p{_index++}";
+                    var value = FormatValue(comparison.Op, comparison.Value);
+                    var op = NormalizeOperator(comparison.Op);
+
+                    parameters.Add(param, value);
+                    Console.WriteLine($"param: {column} val: {value}");
+                    return $"{column} {op} {param}";
+                }
+
+                throw new Exception("Unknown expression");
+            }
+            _sqlInfo.Where = Visit(expr);
+            _sqlInfo.Parameters = parameters;
             return this;
         }
         public (string sql, DynamicParameters parameters) Build()
         {
-            //Primary Table
-            string primaryTable = _sqlInfo.TableInfo.Name;
-            string primaryTableAlias = _sqlInfo.TableInfo.Alias;
-            string fromClause = primaryTableAlias == null ? $"{primaryTable}" : $"{primaryTable} AS {primaryTableAlias}";
-            string primaryColumns = 
-                string.Join(",", _sqlInfo.SelectedColumn.Select(c => { return $"\n{primaryTableAlias??primaryTable}.{c}"; }));
-
-            string joinColumns = string.Join(",\n", _sqlInfo.JoinInfo.Select(j =>
+            var mapValidation = _sqlInfo.Joins.FirstOrDefault(j => j.ColumnsMaps.Count > j.SelectedColumns.Count);
+            if (mapValidation != null)
             {
-                string name = j.LeftColumn.Alias ?? j.LeftColumn.ColumnName;
-                return string.Join(",\n",j.SelectedColumns.Select(c => $"{name}.{c}"));
+                throw new InvalidOperationException(
+                    $"Mapping mismatch: Received {mapValidation.ColumnsMaps.Count} mapping targets, " +
+                    $"but only {mapValidation.SelectedColumns.Count} source columns were selected. " +
+                    "The number of mapping aliases must be less than or equal to the source columns."
+                );
+            }
+
+            var mainColumns = string.Join(",\n", _sqlInfo.SelectedColumns.Select(c => { return $"{_sqlInfo.Root.Alias}.{c}"; }));
+
+            var joinsColumns = _sqlInfo.Joins.Select(j =>
+            {
+                var final = j.GetMappedColumns().Select(c => $"{j.To.Alias}.{c}");
+                return final;
+            });
+
+            var finalJoinsColums = string.Join(",\n", joinsColumns.Select(j => string.Join(",\n", j.Select(c => c))));
+
+            var selectClause = $"SELECT\n{mainColumns},\n{finalJoinsColums}\nFROM {_sqlInfo.Root.Name} AS {_sqlInfo.Root.Alias}";
+
+            string joinClause = string.Join("\n", _sqlInfo.Joins.Select(j =>
+            {
+                return $"{j.JoinType} JOIN {j.To.Name} AS {j.To.Alias} " +
+                       $"ON {j.From.Alias}.{j.On.FromColumn} = {j.To.Alias}.{j.On.ToColumn}";
             }));
 
-            // Inside Build()
-            string joinClause = string.Join("\n", _sqlInfo.JoinInfo.Select(j =>
-            {
-                var tablePart = string.IsNullOrWhiteSpace(j.LeftColumn.Alias)
-                    ? j.LeftColumn.TableName
-                    : $"{j.LeftColumn.TableName} AS {j.LeftColumn.Alias}";
+            var whereClause = $"WHERE {_sqlInfo.Where}";
 
-                var leftAlias = string.IsNullOrWhiteSpace(j.LeftColumn.Alias)
-                    ? j.LeftColumn.TableName
-                    : j.LeftColumn.Alias;
-
-                var rightAlias = string.IsNullOrWhiteSpace(j.RightColumn.Alias)
-                    ? j.RightColumn.TableName
-                    : j.RightColumn.Alias;
-
-                return $"{j.JoinType} JOIN {tablePart} ON {leftAlias}.{j.LeftColumn.ColumnName} = {rightAlias}.{j.RightColumn.ColumnName}";
-            }));
-
-            string sql = $"SELECT {primaryColumns},\n{joinColumns}\nFROM {fromClause}\n{joinClause}";
+            string sql = $"{selectClause}\n{joinClause}\n{whereClause}";
             DynamicParameters parameters = new();
             return (sql, parameters);
         }
-        private HashSet<string> GetColumns(Expression expression)
+        private List<string> GetColumns(Expression expression)
         {
-            var columns = new HashSet<string>();
+            var columns = new List<string>();
             void Visit(Expression expression)
             {
                 if (expression is LambdaExpression lambda)
@@ -148,14 +192,15 @@ namespace SQLQueryBuilder.SQLBuilder
                 {
                     for (var i = 0; i < newExpressions.Arguments.Count; i++)
                     {
-                        columns.Add(GetMemberName(newExpressions.Arguments[i]));
+                        var (_, name) = GetMemberInfo(newExpressions.Arguments[i]);
+                        columns.Add(name);
                     }
                 }
             }
             Visit(expression);
             return columns;
         }
-        private ((Type type, string colName), (Type type, string colName)) GetOnClause(Expression expression)
+        private ((Type type, string column), (Type type, string column)) GetOnClause(Expression expression)
         {
             (Type type, string colName) left = default;
             (Type type, string colName) right = default;
@@ -186,14 +231,6 @@ namespace SQLQueryBuilder.SQLBuilder
 
             return (left, right);
         }
-        private string GetMemberName(Expression expression)
-        {
-            if (expression is MemberExpression member)
-            {
-                return GetColumnName(member.Member.DeclaringType, member.Member.Name);
-            }
-            return string.Empty;
-        }
         private (Type owner, string name) GetMemberInfo(Expression expression)
         {
             if (expression is MemberExpression member)
@@ -204,10 +241,63 @@ namespace SQLQueryBuilder.SQLBuilder
             return (null, string.Empty);
         }
         private string GetTableName(Type TableType) => TableType.GetCustomAttribute<TableAttribute>()?.Name ?? TableType.Name;
-        private string GetColumnName(Type classType, string propertyName)
+        private string? GetColumnName(Type classType, string propertyName)
         {
             var prop = classType.GetProperty(propertyName);
+            if (prop == null) return null;
             return prop.GetCustomAttribute<ColumnAttribute>()?.Name ?? prop.Name;
+        }
+        private TableRef ResolveRootTable(Type type)
+        {
+            if (_sqlInfo.Root.Type != type)
+                throw new Exception("Table not found in query");
+
+            return _sqlInfo.Root;
+        }
+        private (TableRef table, bool exist) ResolveOrCreateTable(Type type)
+        {
+            var exist = _sqlInfo.Joins.Where(j => j.To.Type == type).Select(j => j.To).FirstOrDefault();
+            if (exist != null)
+            {
+                return (exist, true);
+            }
+
+            return (new TableRef
+            {
+                Type = type,
+                Name = GetTableName(type),
+                Alias = $"t{_count++}"
+            }, false);
+        }
+        private bool IsTableRoot(Type type)
+        {
+            if (_sqlInfo.Root.Type == type)
+                return true;
+
+            return false;
+        }
+        private void Reset()
+        {
+            _sqlInfo = null;
+            _count = 0;
+            _index = 0;
+        }
+        private object FormatValue(string op, object value)
+        {
+            if (op == ":")
+            {
+                return $"%{value}%";
+            }
+
+            return value;
+        }
+        private string NormalizeOperator(string op)
+        {
+            return op switch
+            {
+                ":" => "LIKE",
+                _ => op
+            };
         }
     }
 }

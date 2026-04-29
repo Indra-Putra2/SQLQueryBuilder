@@ -1,7 +1,7 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace SQLQueryBuilder.Model
+namespace SQLQueryBuilder.Model.DataModel
 {
     [Table("test")]
     public class Test

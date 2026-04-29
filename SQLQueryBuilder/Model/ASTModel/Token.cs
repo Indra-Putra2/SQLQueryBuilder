@@ -1,4 +1,4 @@
-﻿namespace SQLQueryBuilder.Model
+﻿namespace SQLQueryBuilder.Model.ASTModel
 {
     public enum TokenType
     {
@@ -14,7 +14,7 @@
     public class Token
     {
         public TokenType Type { get; set; }
-        public string Value { get; set; }
+        public required string Value { get; set; }
         public override string ToString() => $"{Type}: {Value}";
     }
 }
