@@ -11,10 +11,11 @@ var lexer = new Lexer();
 List<Token> Tokens = new Lexer().Tokenize(input);
 var parser = new Parser(Tokens);
 var ast = parser.Parse();
-var query = new Query<RamData>();
-query.Select(r =>new {r.Name, r.MemoryType})
-    .Join<Brand>((r, b) => r.BrandID == b.id, b => new { b.Name }, r => new { r.BrandName }, SQLQueryBuilder.Model.Enum.JoinType.INNER)
-    .Join<Brand>((r, b) => b.id == r.BrandID, b => new { b.id }, r => new { r.TestID }, SQLQueryBuilder.Model.Enum.JoinType.INNER)
-    .Where(ast);
-(string sql, DynamicParameters param) result = query.Build();
-Console.WriteLine(result.sql);
+(string sql, DynamicParameters parameters) = new Query()
+    .From<RamData>("r")
+    .Join<Brand>("b", "b.UserId = r.Id")
+    .Select("r.*")
+    .Where(ast)
+    .OrderBy("r.Name")
+    .Build();
+Console.WriteLine(sql);

@@ -7,6 +7,7 @@ namespace SQLQueryBuilder.Model.DataModel
     public class Test
     {
         [Key]
+        [Column("IDTest")]
         public int id { get; set; }
         [Column("TestName")]
         public string Name { get; set; }

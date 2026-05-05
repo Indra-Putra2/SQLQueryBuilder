@@ -8,8 +8,7 @@ namespace SQLQueryBuilder.Model.DataModel
     {
         [Key]
         public int id { get; set; }
-        [ForeignKey("BrandID")]
-        public virtual Brand Brand { get; set; }
+        [Column("Test_Name")]
         public string TestName { get; set; }
         public string BrandName { get; set; }
         public string Name { get; set; }
