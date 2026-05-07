@@ -6,101 +6,201 @@ namespace SQLQueryBuilder.Perser
     {
         private List<Token> _tokens;
         private int _current = 0;
+        private string _input;
 
-        public Parser(List<Token> tokens) => _tokens = tokens;
+        public Parser(List<Token> tokens, string input)
+        {
+            _tokens = tokens;
+            _input = input;
+        }
 
         private Token Peek()
         {
-            if (IsAtEnd()) return null;
+            if (IsAtEnd()) return new Token() { Type = TokenType.EOF, Value = "EOF", Start = _input.Length, Length = 1 };
             return _tokens[_current];
         }
 
-        private Token Advance()
+        private Token Consume()
         {
-            if (!IsAtEnd()) _current++;
-            return _tokens[_current - 1];
+            if (IsAtEnd()) return new Token() { Type = TokenType.EOF, Value = "EOF", Start = _input.Length, Length = 1 };
+            return _tokens[_current++];
         }
 
         private bool IsAtEnd() => _current >= _tokens.Count;
 
         // The starting point for parsing
-        public Expr Parse() => ParseOr();
+        public Expr Parse()
+        {
+            var expression = ParseOr();
+
+            if (!IsAtEnd())
+            {
+                var token = Peek();
+
+                if (token.Type == TokenType.RParen)
+                {
+                    throw ParserErrorHelper.CreateError(_input, token,
+                        "Unbalanced parenthesis. This closing ')' has no matching opening '(' earlier in the query.");
+                }
+                else if(token.Type != TokenType.EOF)
+                {
+                    throw ParserErrorHelper.CreateError(_input, token,
+                    $"Unexpected '{token.Value}' found after the expression. Did you forget a logical operator (AND/OR)?");
+                }
+            }
+
+            return expression;
+        }
+
         private Expr ParseOr()
         {
             var left = ParseAnd();
-
-            while (!IsAtEnd() && Peek()?.Type == TokenType.Or)
+            while (!IsAtEnd() && Peek().Type == TokenType.Or)
             {
-                Advance(); // consume OR
-                var right = ParseAnd();
+                var op = Consume();
 
+                var next = Peek();
+                if (next.Type == TokenType.Operator || next.Type == TokenType.And || next.Type == TokenType.Or || next.Type == TokenType.RParen)
+                {
+                    throw ParserErrorHelper.CreateError(_input, next,
+                        $"Logical operator '{op.Value}' cannot be followed by '{next.Value}'. " +
+                        "Expected a field name or an opening parenthesis.");
+                }
+                var right = ParseAnd();
                 left = new BinaryExpr()
                 {
                     Left = left,
-                    Op = "OR",
+                    Op = op.Value,
                     Right = right
                 };
             }
-
             return left;
         }
         private Expr ParseAnd()
         {
-            var left = ParseComparison();
-
-            while (!IsAtEnd() && Peek()?.Type == TokenType.And)
+            var left = ParsePrimary();
+            while (!IsAtEnd() && Peek().Type == TokenType.And)
             {
-                Advance(); // consume AND
-                var right = ParseComparison();
+                var op = Consume();
 
+                var next = Peek();
+                if (next.Type == TokenType.Operator || next.Type == TokenType.And || next.Type == TokenType.Or || next.Type == TokenType.RParen)
+                {
+                    throw ParserErrorHelper.CreateError(_input, next,
+                        $"Logical operator '{op.Value}' cannot be followed by '{next.Value}'. " +
+                        "Expected a field name or an opening parenthesis.");
+                }
+
+                var right = ParsePrimary();
                 left = new BinaryExpr()
                 {
                     Left = left,
-                    Op = "AND",
+                    Op = op.Value,
                     Right = right
                 };
             }
-
             return left;
         }
-        private Expr ParseComparison()
-        {
-            // 1. Get the left side (Brand, Price, etc.)
-            var left = ParsePrimary();
-
-            // 2. If the NEXT token is an operator (: < >), then this IS a comparison
-            if (!IsAtEnd() && Peek()?.Type == TokenType.Operator)
-            {
-                var op = Advance();
-                var right = ParsePrimary(); // Get the value (Kingston, 500)
-
-                // Return a ComparisonExpr
-                return new ComparisonExpr
-                {
-                    Identifier = (left as LiteralExpr)!.Value, // You'll need to cast or handle this
-                    Op = op.Value,
-                    Value = (right as LiteralExpr)!.Value
-                };
-            }
-
-            // 3. If there's no operator, just pass the primary (like a bracketed group) up
-            return left;
-        }
-
         private Expr ParsePrimary()
         {
             var token = Peek();
 
             if (token.Type == TokenType.LParen)
             {
-                Advance();
+                Consume(); // (
+
+                if (Peek().Type == TokenType.RParen)
+                {
+                    throw ParserErrorHelper.CreateError(_input, Peek(),
+                        "Empty expression. Parentheses must contain a search term (e.g., '(Name:Kingston)').");
+                }
                 var expr = ParseOr();
-                if (Peek()?.Type == TokenType.RParen) Advance();
+                if (Peek().Type != TokenType.RParen)
+                {
+                    // Pointing to the opening bracket that failed to close
+                    throw ParserErrorHelper.CreateError(_input, token,
+                        "This opening parenthesis is never closed.");
+                }
+                Consume(); // )
                 return expr;
             }
 
-            // This is the "Base Case" - just return a single piece of data
-            return new LiteralExpr { Value = Advance().Value };
+            if (token.Type == TokenType.RParen)
+            {
+                throw ParserErrorHelper.CreateError(_input, token,
+                    "Unexpected closing parenthesis. Did you forget an opening '('?");
+            }
+
+            return ParseComparison();
+        }
+        private Expr ParseComparison()
+        {
+            var left = ParseIdentifier();
+            var token = Peek();
+
+            if (!IsAtEnd() && token.Type == TokenType.Operator)
+            {
+                var right = ParseValue();
+                var @operator = Consume();
+                return new ComparisonExpr
+                {
+                    Identifier = left.Value,
+                    Op = @operator.Value,
+                    Value = right.Value
+                };
+            }
+            else if(!IsAtEnd() && token.Type != TokenType.Operator)
+            {
+               throw ParserErrorHelper.CreateError(_input, token, $"Expected Operator, but found '{token.Value}'.");
+            }
+
+            return left;
+        }
+        private LiteralExpr ParseIdentifier()
+        {
+            var token = Peek();
+
+            if (token.Type != TokenType.String &&
+                token.Type != TokenType.Number)
+            {
+                throw ParserErrorHelper.CreateError(
+                    _input,
+                    token,
+                    $"Expected Identifier, but found '{token.Value}'.");
+            }
+
+            return new LiteralExpr
+            {
+                Value = Consume().Value
+            };
+        }
+        private LiteralExpr ParseValue()
+        {
+            var token = Peek();
+
+            if (token.Type != TokenType.String &&
+                token.Type != TokenType.Number)
+            {
+                throw ParserErrorHelper.CreateError(
+                    _input,
+                    token,
+                    $"Expected Value, but found '{token.Value}'.");
+            }
+
+            if (token.Type == TokenType.Number)
+            {
+                if (!float.TryParse(token.Value, out _))
+                {
+                    throw ParserErrorHelper.CreateError(
+                        _input,
+                        token,
+                        $"'{token.Value}' is not a valid number.");
+                }
+            }
+            return new LiteralExpr
+            {
+                Value = Consume().Value
+            };
         }
     }
 }

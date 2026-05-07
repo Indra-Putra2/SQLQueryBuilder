@@ -2,19 +2,25 @@
 {
     public enum TokenType
     {
-        Identifier,
         Operator,
-        Value,
+        String,
+        Number,
         And,
         Or,
         LParen,
-        RParen
+        RParen,
+        EOF
     }
 
     public class Token
     {
-        public TokenType Type { get; set; }
+        public required TokenType Type { get; set; }
         public required string Value { get; set; }
-        public override string ToString() => $"{Type}: {Value}";
+
+        public required int Start { get; set; }
+        public required int Length { get; set; }
+
+        public override string ToString()
+            => $"{Type}: {Value}";
     }
 }

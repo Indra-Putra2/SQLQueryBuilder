@@ -70,7 +70,7 @@ namespace SQLQueryBuilder.SQLBuilder
                     var op = NormalizeOperator(comparison.Op);
 
                     parameters.Add(param, value);
-                    Console.WriteLine($"param: {column} val: {value}");
+                    Console.WriteLine($"{param}: {column} val: {value}");
                     return $"{_sqlInfo.Root.Alias}.{column} {op} {param}";
                 }
 

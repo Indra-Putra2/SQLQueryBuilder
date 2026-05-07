@@ -1,108 +1,93 @@
-﻿using SQLQueryBuilder.Model.ASTModel;
+﻿using SQLQueryBuilder.Lexer.Helper;
+using SQLQueryBuilder.Lexer.State;
+using SQLQueryBuilder.Model.ASTModel;
+using SQLQueryBuilder.Model.Constant;
+using SQLQueryBuilder.Model.Enum;
+using SQLQueryBuilder.Model.Interface;
 
 namespace SQLQueryBuilder.Lexer
 {
-    public class Lexer
+    public class Lexer : ILexerStateSwitcher
     {
-        List<Token> Tokens;
+        private List<Token> _tokens;
+        private Dictionary<LexerStateEnum, ILexerState> _states;
         public Lexer()
         {
-            Tokens = new();
+            _tokens = new();
+            _states = new Dictionary<LexerStateEnum, ILexerState>()
+            {
+                { LexerStateEnum.Parenthesis, new ParenthesisState(this)},
+                { LexerStateEnum.Symbol, new SymbolState(this)},
+                { LexerStateEnum.Digit, new DigitState(this)},
+                { LexerStateEnum.Letter, new LetterState(this)},
+            };
         }
 
         public List<Token> Tokenize(string input)
         {
-            int i = 0;
-            bool lastWasSymbol = false;
-
-            while (i < input.Length)
+            var context = new LexerContext(input);
+            while (!context.IsAtEnd)
             {
-                char c = input[i];
+                char c = context.Peek();
+
+                //Handle WhiteSpace
                 if (char.IsWhiteSpace(c))
                 {
-                    i++;
-                    lastWasSymbol = false;
+                    context.SetCurrentState(Model.Enum.LexerStateEnum.WhiteSpace);
+                    context.Consume();
                     continue;
                 }
 
-                if (c == '(')
+                //Handle Parenthesis
+                else if (c == '(' || c == ')')
                 {
-                    i++;
-                    Tokens.Add(new Token() { Type = TokenType.LParen, Value = c.ToString() });
-                    lastWasSymbol = false;
+                    SwitchState(LexerStateEnum.Parenthesis, ref context);
                     continue;
                 }
 
-                if (c == ')')
+                //Handle Symbol
+                else if (SqlGrammar.OperatorChars.Contains(c))
                 {
-                    i++;
-                    Tokens.Add(new Token() { Type = TokenType.RParen, Value = c.ToString() });
-                    lastWasSymbol = false;
+                    SwitchState(LexerStateEnum.Symbol, ref context);
                     continue;
                 }
 
-                if ("=><!:".Contains(c))
+                // Handle Digits
+                else if (char.IsDigit(c))
                 {
-                    var start = i;
-                    while (i < input.Length && "=><!:".Contains(input[i]))
-                        i++;
-                    string op = input.Substring(start, i - start);
-                    Tokens.Add(new Token() { Type = TokenType.Operator, Value = op });
-                    lastWasSymbol = true;
+                    SwitchState(LexerStateEnum.Digit, ref context);
                     continue;
                 }
 
-                // Handle Digits specifically
-                if (char.IsDigit(c))
+                // Handle Letters
+                else if (char.IsLetter(c))
                 {
-                    var start = i;
-                    while (i < input.Length && char.IsDigit(input[i]))
-                        i++;
-
-                    string digit = input.Substring(start, i - start);
-                    if (lastWasSymbol)
-                    {
-                        Tokens.Add(new Token() { Type = TokenType.Value, Value = digit });
-                    }
-                    else
-                    {
-                        Tokens.Add(new Token() { Type = TokenType.Identifier, Value = digit });
-                    }
-
-                    lastWasSymbol = false;
+                    SwitchState(LexerStateEnum.Letter, ref context);
                     continue;
                 }
-
-                // Handle Letters specifically
-                if (char.IsLetter(c))
-                {
-                    var start = i;
-                    while (i < input.Length && char.IsLetter(input[i]))
-                        i++;
-
-                    string word = input.Substring(start, i - start);
-                    if (word.Equals("and", StringComparison.InvariantCultureIgnoreCase))
-                    {
-                        Tokens.Add(new Token() { Type = TokenType.And, Value = word });
-                    }
-                    else if (word.Equals("or", StringComparison.InvariantCultureIgnoreCase))
-                    {
-                        Tokens.Add(new Token() { Type = TokenType.Or, Value = word });
-                    }
-                    else if (lastWasSymbol)
-                    {
-                        Tokens.Add(new Token() { Type = TokenType.Value, Value = word });
-                    }
-                    else
-                    {
-                        Tokens.Add(new Token() { Type = TokenType.Identifier, Value = word });
-                    }
-                    lastWasSymbol = false;
-                    continue;
-                }
-                i++;
+                throw LexerExceptionHelper.CreateSinglePointerError(GetType(), context.Index, ref context);
             }
-            return Tokens;
+            _tokens.Add(new Token() { Type = TokenType.EOF, Value = "EOF", Start = input.Length, Length = 1 });
+            foreach (var token in _tokens)
+            {
+                Console.WriteLine(token);
+            }
+            return _tokens;
+        }
+        public void SwitchState(LexerStateEnum lexerState, ref LexerContext context)
+        {
+            context.SetCurrentState(lexerState);
+            if (_states.TryGetValue(lexerState, out var state))
+            {
+                _tokens.Add(state.Tokenize(ref context));
+                return;
+            }
+
+            var frame = new System.Diagnostics.StackTrace().GetFrame(1); // 1 is the immediate caller
+            var method = frame.GetMethod();
+            var callerInfo = $"{method.DeclaringType.Name}.{method.Name}";
+
+            throw new InvalidOperationException($"{callerInfo} State {lexerState} Doesnt Exist!");
         }
     }
 }
