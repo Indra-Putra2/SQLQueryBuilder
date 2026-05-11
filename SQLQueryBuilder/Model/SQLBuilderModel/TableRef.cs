@@ -1,6 +1,6 @@
 ﻿namespace SQLQueryBuilder.Model.SQLBuilderModel
 {
-    public class TableRef
+    internal class TableRef
     {
         public required Type Type { get; init; }
 

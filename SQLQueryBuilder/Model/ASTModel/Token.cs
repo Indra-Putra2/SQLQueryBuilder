@@ -1,18 +1,18 @@
 ﻿namespace SQLQueryBuilder.Model.ASTModel
 {
-    public enum TokenType
+    internal enum TokenType
     {
         Operator,
         String,
         Number,
-        And,
-        Or,
+        AND,
+        OR,
         LParen,
         RParen,
         EOF
     }
 
-    public class Token
+    internal class Token
     {
         public required TokenType Type { get; set; }
         public required string Value { get; set; }

@@ -9,7 +9,7 @@ namespace SQLQueryBuilder.Model.SQLBuilderModel
         public string SelectedColumns 
         {
             get => _selectedColums;
-            set => _selectedColums = value.Trim() ?? "*"; 
+            set => _selectedColums = value?.Trim() ?? "*"; 
         }
         public List<JoinInfo> Joins { get; set; } = new();
 
@@ -31,5 +31,11 @@ namespace SQLQueryBuilder.Model.SQLBuilderModel
             set => _groupBy = value.Trim() ?? string.Empty;
         }
         public DynamicParameters? Parameters { get; set; }
+
+        public string GetAlias(Type type)
+        {
+            if (type == Root.Type) return Root.Alias;
+            return Joins.Where(j => j.Table.Type == type).Select(j => j.Table.Alias).FirstOrDefault()!;
+        }
     }
 }

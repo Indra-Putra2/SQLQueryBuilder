@@ -1,7 +1,7 @@
 ﻿using SQLQueryBuilder.Model.Enum;
 using SQLQueryBuilder.Model.SQLBuilderModel;
 
-public class JoinInfo
+internal class JoinInfo
 {
     public required TableRef Table { get; init; }
     private string _on = null!;

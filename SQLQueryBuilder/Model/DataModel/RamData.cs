@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace SQLQueryBuilder.Model.DataModel
 {
     [Table("Products")]
-    public class RamData
+    internal class RamData
     {
         [Key]
         public int id { get; set; }
@@ -29,7 +29,7 @@ namespace SQLQueryBuilder.Model.DataModel
                 return $"""
                     [RamData ID:        {id}]
                     Name:               {Name}
-                    Brand:              {BrandName??"Null"} (ID: {BrandID})
+                    Brand:              {BrandName ?? "Null"} (ID: {BrandID})
                     Type:               {MemoryType} @ {MemorySpeed}MHz
                     Module:             {Module}
                     Capacity:           {TotalCapacity}GB

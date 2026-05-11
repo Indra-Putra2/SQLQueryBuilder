@@ -7,7 +7,7 @@ using SQLQueryBuilder.Model.Interface;
 
 namespace SQLQueryBuilder.Lexer
 {
-    public class Lexer : ILexerStateSwitcher
+    internal class Lexer : ILexerStateSwitcher
     {
         private List<Token> _tokens;
         private Dictionary<LexerStateEnum, ILexerState> _states;
@@ -19,7 +19,7 @@ namespace SQLQueryBuilder.Lexer
                 { LexerStateEnum.Parenthesis, new ParenthesisState(this)},
                 { LexerStateEnum.Symbol, new SymbolState(this)},
                 { LexerStateEnum.Digit, new DigitState(this)},
-                { LexerStateEnum.Letter, new LetterState(this)},
+                { LexerStateEnum.String, new StringState(this)},
             };
         }
 
@@ -59,13 +59,13 @@ namespace SQLQueryBuilder.Lexer
                     continue;
                 }
 
-                // Handle Letters
-                else if (char.IsLetter(c))
+                // Handle String and letters
+                else if (c == '\'' || char.IsLetter(c))
                 {
-                    SwitchState(LexerStateEnum.Letter, ref context);
+                    SwitchState(LexerStateEnum.String, ref context);
                     continue;
                 }
-                throw LexerExceptionHelper.CreateSinglePointerError(GetType(), context.Index, ref context);
+                throw LexerExceptionHelper.CreateSinglePointerError(GetType(), context.Index, context.Peek(), ref context, "Unkown Character");
             }
             _tokens.Add(new Token() { Type = TokenType.EOF, Value = "EOF", Start = input.Length, Length = 1 });
             foreach (var token in _tokens)
@@ -76,18 +76,13 @@ namespace SQLQueryBuilder.Lexer
         }
         public void SwitchState(LexerStateEnum lexerState, ref LexerContext context)
         {
-            context.SetCurrentState(lexerState);
-            if (_states.TryGetValue(lexerState, out var state))
+            if (!_states.TryGetValue(lexerState, out var state))
             {
-                _tokens.Add(state.Tokenize(ref context));
-                return;
+                throw new Exception($"Missing state: {lexerState}");
             }
 
-            var frame = new System.Diagnostics.StackTrace().GetFrame(1); // 1 is the immediate caller
-            var method = frame.GetMethod();
-            var callerInfo = $"{method.DeclaringType.Name}.{method.Name}";
-
-            throw new InvalidOperationException($"{callerInfo} State {lexerState} Doesnt Exist!");
+            context.SetCurrentState(lexerState);
+            _tokens.Add(state.Tokenize(ref context));
         }
     }
 }

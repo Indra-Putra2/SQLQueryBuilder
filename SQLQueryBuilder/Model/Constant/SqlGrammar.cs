@@ -1,6 +1,6 @@
 ﻿namespace SQLQueryBuilder.Model.Constant
 {
-    public static class SqlGrammar
+    internal static class SqlGrammar
     {
         public static readonly HashSet<string> Operators = new()
     {

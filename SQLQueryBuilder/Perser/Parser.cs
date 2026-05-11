@@ -2,50 +2,73 @@
 
 namespace SQLQueryBuilder.Perser
 {
-    public class Parser
+    internal class Parser
     {
-        private List<Token> _tokens;
+        private List<Token> _tokens = new List<Token>();
         private int _current = 0;
-        private string _input;
-
-        public Parser(List<Token> tokens, string input)
-        {
-            _tokens = tokens;
-            _input = input;
-        }
-
+        private string _input = "";
+        //Utility
         private Token Peek()
         {
-            if (IsAtEnd()) return new Token() { Type = TokenType.EOF, Value = "EOF", Start = _input.Length, Length = 1 };
+            if (IsAtEnd) return _tokens[_tokens.Count - 1];
             return _tokens[_current];
         }
-
         private Token Consume()
         {
-            if (IsAtEnd()) return new Token() { Type = TokenType.EOF, Value = "EOF", Start = _input.Length, Length = 1 };
+            if (IsAtEnd)
+                throw new Exception($"Consume past end at Index={_current}");
             return _tokens[_current++];
         }
+        private bool IsAtEnd => _current >= _tokens.Count;
+        private Token ExpectAny(
+            string errorMessage,
+            params TokenType[] validTypes)
+        {
+            var token = Peek();
 
-        private bool IsAtEnd() => _current >= _tokens.Count;
+            if (!validTypes.Contains(token.Type))
+            {
+                throw ParserErrorHelper.CreateError(
+                    _input,
+                    token,
+                    errorMessage);
+            }
+
+            return Consume();
+        }
+
+        private bool Match(TokenType type)
+        {
+            if (Check(type))
+            {
+                Consume();
+                return true;
+            }
+
+            return false;
+        }
+        private bool Check(TokenType type) => Peek().Type == type;
 
         // The starting point for parsing
-        public Expr Parse()
+        public Expr Parse(List<Token> tokens, string input)
         {
+            _tokens = tokens ?? throw new ArgumentNullException(nameof(tokens));
+            _input = input ?? throw new ArgumentNullException(nameof(input));
+            _current = 0;
+
             var expression = ParseOr();
 
-            if (!IsAtEnd())
+            if (!IsAtEnd)
             {
-                var token = Peek();
-
-                if (token.Type == TokenType.RParen)
+                if (Check(TokenType.RParen))
                 {
-                    throw ParserErrorHelper.CreateError(_input, token,
-                        "Unbalanced parenthesis. This closing ')' has no matching opening '(' earlier in the query.");
+                    throw ParserErrorHelper.CreateError(_input, Peek(),
+                        "Unexpected closing parenthesis.");
                 }
-                else if(token.Type != TokenType.EOF)
+                if (!Check(TokenType.EOF))
                 {
-                    throw ParserErrorHelper.CreateError(_input, token,
-                    $"Unexpected '{token.Value}' found after the expression. Did you forget a logical operator (AND/OR)?");
+                    throw ParserErrorHelper.CreateError(_input, Peek(),
+                    $"Unexpected '{Peek().Value}' found after the expression. Did you forget a logical operator (AND/OR)?");
                 }
             }
 
@@ -55,17 +78,9 @@ namespace SQLQueryBuilder.Perser
         private Expr ParseOr()
         {
             var left = ParseAnd();
-            while (!IsAtEnd() && Peek().Type == TokenType.Or)
+            while (!IsAtEnd && Check(TokenType.OR))
             {
                 var op = Consume();
-
-                var next = Peek();
-                if (next.Type == TokenType.Operator || next.Type == TokenType.And || next.Type == TokenType.Or || next.Type == TokenType.RParen)
-                {
-                    throw ParserErrorHelper.CreateError(_input, next,
-                        $"Logical operator '{op.Value}' cannot be followed by '{next.Value}'. " +
-                        "Expected a field name or an opening parenthesis.");
-                }
                 var right = ParseAnd();
                 left = new BinaryExpr()
                 {
@@ -79,18 +94,9 @@ namespace SQLQueryBuilder.Perser
         private Expr ParseAnd()
         {
             var left = ParsePrimary();
-            while (!IsAtEnd() && Peek().Type == TokenType.And)
+            while (!IsAtEnd && Check(TokenType.AND))
             {
                 var op = Consume();
-
-                var next = Peek();
-                if (next.Type == TokenType.Operator || next.Type == TokenType.And || next.Type == TokenType.Or || next.Type == TokenType.RParen)
-                {
-                    throw ParserErrorHelper.CreateError(_input, next,
-                        $"Logical operator '{op.Value}' cannot be followed by '{next.Value}'. " +
-                        "Expected a field name or an opening parenthesis.");
-                }
-
                 var right = ParsePrimary();
                 left = new BinaryExpr()
                 {
@@ -103,32 +109,27 @@ namespace SQLQueryBuilder.Perser
         }
         private Expr ParsePrimary()
         {
-            var token = Peek();
-
-            if (token.Type == TokenType.LParen)
+            if (Match(TokenType.LParen))
             {
-                Consume(); // (
+                if (Check(TokenType.RParen))
+                {
+                    throw ParserErrorHelper.CreateError(
+                        _input,
+                        Peek(),
+                        "Empty expression.");
+                }
 
-                if (Peek().Type == TokenType.RParen)
-                {
-                    throw ParserErrorHelper.CreateError(_input, Peek(),
-                        "Empty expression. Parentheses must contain a search term (e.g., '(Name:Kingston)').");
-                }
                 var expr = ParseOr();
-                if (Peek().Type != TokenType.RParen)
-                {
-                    // Pointing to the opening bracket that failed to close
-                    throw ParserErrorHelper.CreateError(_input, token,
-                        "This opening parenthesis is never closed.");
-                }
-                Consume(); // )
+                ExpectAny("Expected ')' after expression.",TokenType.RParen);
                 return expr;
             }
 
-            if (token.Type == TokenType.RParen)
+            if (Check(TokenType.RParen))
             {
-                throw ParserErrorHelper.CreateError(_input, token,
-                    "Unexpected closing parenthesis. Did you forget an opening '('?");
+                throw ParserErrorHelper.CreateError(
+                    _input,
+                    Peek(),
+                    "Unexpected closing parenthesis.");
             }
 
             return ParseComparison();
@@ -136,70 +137,35 @@ namespace SQLQueryBuilder.Perser
         private Expr ParseComparison()
         {
             var left = ParseIdentifier();
-            var token = Peek();
 
-            if (!IsAtEnd() && token.Type == TokenType.Operator)
-            {
-                var right = ParseValue();
-                var @operator = Consume();
-                return new ComparisonExpr
-                {
-                    Identifier = left.Value,
-                    Op = @operator.Value,
-                    Value = right.Value
-                };
-            }
-            else if(!IsAtEnd() && token.Type != TokenType.Operator)
-            {
-               throw ParserErrorHelper.CreateError(_input, token, $"Expected Operator, but found '{token.Value}'.");
-            }
+            var @operator = ExpectAny(
+                $"Expected operator, but found '{Peek().Value}'.",
+                TokenType.Operator);
 
-            return left;
+            var right = ParseValue();
+
+            return new ComparisonExpr
+            {
+                Identifier = left.Value,
+                Op = @operator.Value,
+                Value = right.Value
+            };
         }
         private LiteralExpr ParseIdentifier()
         {
-            var token = Peek();
-
-            if (token.Type != TokenType.String &&
-                token.Type != TokenType.Number)
-            {
-                throw ParserErrorHelper.CreateError(
-                    _input,
-                    token,
-                    $"Expected Identifier, but found '{token.Value}'.");
-            }
-
+            var token = ExpectAny($"Expected Identifier with type of {TokenType.String}, but found '{Peek().Value}'. with Type of '{Peek().Type}'.", TokenType.String);
             return new LiteralExpr
             {
-                Value = Consume().Value
+                Value = token.Value
             };
         }
         private LiteralExpr ParseValue()
         {
-            var token = Peek();
-
-            if (token.Type != TokenType.String &&
-                token.Type != TokenType.Number)
-            {
-                throw ParserErrorHelper.CreateError(
-                    _input,
-                    token,
-                    $"Expected Value, but found '{token.Value}'.");
-            }
-
-            if (token.Type == TokenType.Number)
-            {
-                if (!float.TryParse(token.Value, out _))
-                {
-                    throw ParserErrorHelper.CreateError(
-                        _input,
-                        token,
-                        $"'{token.Value}' is not a valid number.");
-                }
-            }
+            var token = ExpectAny($"Expected Value with type of {TokenType.String}/{TokenType.Number}, but found '{Peek().Value}'. with Type of '{Peek().Type}'."
+                , TokenType.String, TokenType.Number);
             return new LiteralExpr
             {
-                Value = Consume().Value
+                Value = token.Value
             };
         }
     }

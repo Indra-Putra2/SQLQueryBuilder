@@ -3,7 +3,7 @@ using SQLQueryBuilder.Model.Enum;
 
 namespace SQLQueryBuilder.Model.Interface
 {
-    public interface ILexerStateSwitcher
+    internal interface ILexerStateSwitcher
     {
         void SwitchState(LexerStateEnum lexerState, ref LexerContext context);
     }

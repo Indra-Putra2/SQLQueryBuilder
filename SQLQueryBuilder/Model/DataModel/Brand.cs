@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace SQLQueryBuilder.Model.DataModel
 {
     [Table("Brands")]
-    public class Brand
+    internal class Brand
     {
         [Key]
         [Column("IDBrand")]

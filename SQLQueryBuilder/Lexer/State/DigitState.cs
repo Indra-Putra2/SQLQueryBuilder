@@ -7,6 +7,7 @@ namespace SQLQueryBuilder.Lexer.State
     internal class DigitState : ILexerState
     {
         private ILexerStateSwitcher _lexer;
+        private int _commaCounter = 0;
         public DigitState(ILexerStateSwitcher lexer)
         {
             this._lexer = lexer;
@@ -14,13 +15,17 @@ namespace SQLQueryBuilder.Lexer.State
 
         public Token Tokenize(ref LexerContext context)
         {
+            _commaCounter = 0;
             char c = context.Peek();
+            int start = context.Index;
+            string digit = string.Empty;
+
             if (char.IsDigit(c))
             {
-                int start = context.Index;
-                string digit = string.Empty;
                 while (!context.IsAtEnd && (char.IsDigit(context.Peek()) || context.Peek() == '.'))
                 {
+                    if(context.Peek() == '.') _commaCounter++;
+                    if(_commaCounter > 1) throw LexerExceptionHelper.CreateSinglePointerError(GetType(), context.Index, context.Peek(), ref context, "Invalid Numbering");
                     digit += context.Consume();
                 }
 
@@ -32,7 +37,7 @@ namespace SQLQueryBuilder.Lexer.State
                     Length = digit.Length
                 };
             }
-            throw LexerExceptionHelper.CreateSinglePointerError(GetType(), context.Index, ref context);
+            throw LexerExceptionHelper.CreateSinglePointerError(GetType(), start, c, ref context, "Invalid Character");
         }
     }
 }

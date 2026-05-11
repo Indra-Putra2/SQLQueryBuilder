@@ -2,7 +2,7 @@
 
 namespace SQLQueryBuilder
 {
-    public static class AstPrinter
+    internal static class AstPrinter
     {
         public static void Print(Expr expr, string indent = "", string title = "", bool isLast = true)
         {

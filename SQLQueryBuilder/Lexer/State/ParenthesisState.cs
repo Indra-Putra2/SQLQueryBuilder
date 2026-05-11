@@ -40,7 +40,7 @@ namespace SQLQueryBuilder.Lexer.State
                 };
             }
 
-            throw LexerExceptionHelper.CreateSinglePointerError(GetType(), context.Index, ref context);
+            throw LexerExceptionHelper.CreateSinglePointerError(GetType(), currentIndex, c, ref context, "Invalid Character");
         }
     }
 }

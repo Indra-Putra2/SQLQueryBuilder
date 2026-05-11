@@ -2,7 +2,7 @@
 
 namespace SQLQueryBuilder.Model.ASTModel
 {
-    public ref struct LexerContext
+    internal ref struct LexerContext
     {
         public readonly ReadOnlySpan<char> Input;
         public int Index { get; private set; } // Encapsulate to prevent manual tampering
@@ -24,7 +24,9 @@ namespace SQLQueryBuilder.Model.ASTModel
         // Move forward and return character
         public char Consume()
         {
-            if (IsAtEnd) return '\0';
+            if (IsAtEnd)
+                throw new Exception($"Consume past end at Index={Index}");
+
             return Input[Index++];
         }
         // Returns a "bookmark" of the current position
@@ -34,12 +36,6 @@ namespace SQLQueryBuilder.Model.ASTModel
         public void Rollback(int bookmark)
         {
             Index = bookmark;
-        }
-
-        //Get char at given index 
-        public char GetChar(int index)
-        {
-            return Input[index];
         }
         public bool IsAtEnd => Index >= Input.Length;
     }

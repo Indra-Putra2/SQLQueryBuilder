@@ -8,22 +8,30 @@ using System.Reflection;
 
 namespace SQLQueryBuilder.SQLBuilder
 {
-    public class Query : IQueryStart, IQuery, IQueryAfterWhere
+    public class Query<Root> : IQuerySelect, IQuery, IQueryFilter
     {
         private int _index = 0;
         private SQLInfo _sqlInfo;
-
-        public IQuery From<T>(string tableAlias)
+        private Dictionary<string, string> _columnMaps = new(StringComparer.OrdinalIgnoreCase);
+        public Query(string alias)
         {
+            Reset();
             _sqlInfo = new SQLInfo()
             {
-                Root = CreateTable<T>(tableAlias)
+                Root = CreateTable<Root>(alias),
             };
-            return this;
         }
-        public IQuery Select(string colums = null)
+        public IQuery Select(string colums)
         {
             _sqlInfo.SelectedColumns = colums;
+            return this;
+        }
+        public IQuery MapField(params (string columnName, string alias)[] maps)
+        {
+            foreach (var map in maps)
+            {
+                _columnMaps[map.alias] = map.columnName;
+            }
             return this;
         }
         public IQuery Join<T>(string tableAlias, string join, JoinTypeEnum joinType = JoinTypeEnum.INNER)
@@ -36,17 +44,17 @@ namespace SQLQueryBuilder.SQLBuilder
             _sqlInfo.Joins.Add(newJoin);
             return this;
         }
-        public IQuery GroupBy(string groupBy)
+        public IQueryFilter GroupBy(string groupBy)
         {
             _sqlInfo.GroupBy = groupBy;
             return this;
         }
-        public IQuery OrderBy(string orderBy, OrderTypeEnum order = Model.Enum.OrderTypeEnum.DESC)
+        public IQueryFilter OrderBy(string orderBy, OrderTypeEnum order = Model.Enum.OrderTypeEnum.DESC)
         {
             _sqlInfo.OrderBy = $"{orderBy.Trim()} {order.ToString()}";
             return this;
         }
-        public IQueryAfterWhere Where(Expr expr)
+        public IQueryFilter Where(Expr expr)
         {
             var parameters = new DynamicParameters();
 
@@ -60,18 +68,25 @@ namespace SQLQueryBuilder.SQLBuilder
                 }
                 else if (expr is ComparisonExpr comparison)
                 {
-                    var column = GetColumnName(_sqlInfo.Root.Type, comparison.Identifier);
-                    if (column == null)
+                    var columnName = GetColumnName(_sqlInfo.Root.Type, comparison.Identifier);
+
+                    if (columnName == null)
                     {
-                        throw new InvalidFilterCriteriaException($"Cannot Find Column With The Name {comparison.Identifier}");
+                        throw new InvalidFilterCriteriaException($"Cannot Find Column With The Name '{comparison.Identifier}'");
                     }
+
+                    var hasAlias = _columnMaps.TryGetValue(columnName, out var colWithAlias);
+
                     var param = $"@p{_index++}";
                     var value = FormatValue(comparison.Op, comparison.Value);
                     var op = NormalizeOperator(comparison.Op);
 
                     parameters.Add(param, value);
-                    Console.WriteLine($"{param}: {column} val: {value}");
-                    return $"{_sqlInfo.Root.Alias}.{column} {op} {param}";
+
+                    var finalName = hasAlias ? colWithAlias : $"{_sqlInfo.Root.Alias}.{columnName}";
+                    Console.WriteLine($"{param}: {finalName} val: {value}");
+
+                    return $"{finalName} {op} {param}";
                 }
 
                 throw new Exception("Unknown expression");
@@ -108,14 +123,22 @@ namespace SQLQueryBuilder.SQLBuilder
             return (sql, _sqlInfo.Parameters);
         }
         private string GetTableName(Type TableType) => TableType.GetCustomAttribute<TableAttribute>()?.Name ?? TableType.Name;
-        private string? GetColumnName(Type classType, string propertyName)
+        private string GetColumnName(Type classType, string propertyName)
         {
-            var prop = classType.GetProperty(propertyName);
-            if (prop == null) return null;
+            var prop = classType.GetProperty(
+                propertyName,
+                BindingFlags.Public |
+                BindingFlags.Instance |
+                BindingFlags.IgnoreCase);
+
+            if (prop == null)
+                return null;
+
             return prop.GetCustomAttribute<ColumnAttribute>()?.Name ?? prop.Name;
         }
         private void Reset()
         {
+            _columnMaps.Clear();
             _sqlInfo = null;
             _index = 0;
         }

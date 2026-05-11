@@ -2,8 +2,9 @@
 
 namespace SQLQueryBuilder.Perser
 {
-    public static class ParserErrorHelper
+    internal static class ParserErrorHelper
     {
+        private const int DIVIDER_LENGTH = 50;
         public static Exception CreateError(
             string input,
             Token token,
@@ -19,10 +20,10 @@ namespace SQLQueryBuilder.Perser
             return new Exception(
             $"""
             {message}
-            {new string('=', 25)}
+            {new string('=', DIVIDER_LENGTH)}
             {input}
             {pointer}
-            {new string('=', 25)}
+            {new string('=', DIVIDER_LENGTH)}
             """);
         }
 
@@ -38,10 +39,10 @@ namespace SQLQueryBuilder.Perser
             return new Exception(
             $"""
             {message}
-            {new string('=', 25)}
+            {new string('=', DIVIDER_LENGTH)}
             {input}
             {pointer}
-            {new string('=', 25)}
+            {new string('=', DIVIDER_LENGTH)}
             """);
         }
 
@@ -57,10 +58,10 @@ namespace SQLQueryBuilder.Perser
             return new Exception(
             $"""
             {message}
-            {new string('=', 25)}
+            {new string('=', DIVIDER_LENGTH)}
             {input}
             {pointer}
-            {new string('=', 25)}
+            {new string('=', DIVIDER_LENGTH)}
             """);
         }
     }

@@ -2,7 +2,7 @@
 
 namespace SQLQueryBuilder.Model.Interface
 {
-    public interface ILexerState
+    internal interface ILexerState
     {
         Token Tokenize(ref LexerContext context);
     }

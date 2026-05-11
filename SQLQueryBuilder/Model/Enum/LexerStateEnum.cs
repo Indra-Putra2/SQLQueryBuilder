@@ -1,12 +1,12 @@
 ﻿namespace SQLQueryBuilder.Model.Enum
 {
-    public enum LexerStateEnum : byte
+    internal enum LexerStateEnum : byte
     {
         None,
         WhiteSpace,
         Parenthesis,
         Symbol,
         Digit,
-        Letter,
+        String,
     }
 }
