@@ -1,7 +1,7 @@
 ﻿using Dapper;
+using SQLQueryBuilder.Enum;
+using SQLQueryBuilder.Interface;
 using SQLQueryBuilder.Model.ASTModel;
-using SQLQueryBuilder.Model.Enum;
-using SQLQueryBuilder.Model.Interface;
 using SQLQueryBuilder.Model.SQLBuilderModel;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Reflection;
@@ -11,12 +11,11 @@ namespace SQLQueryBuilder.SQLBuilder
     public class Query<Root> : IQuerySelect, IQuery, IQueryFilter
     {
         private int _index = 0;
-        private SQLInfo _sqlInfo;
-        private Dictionary<string, string> _columnMaps = new(StringComparer.OrdinalIgnoreCase);
+        private SQLInfoModel _sqlInfo;
         public Query(string alias)
         {
             Reset();
-            _sqlInfo = new SQLInfo()
+            _sqlInfo = new SQLInfoModel()
             {
                 Root = CreateTable<Root>(alias),
             };
@@ -28,15 +27,12 @@ namespace SQLQueryBuilder.SQLBuilder
         }
         public IQuery MapField(params (string columnName, string alias)[] maps)
         {
-            foreach (var map in maps)
-            {
-                _columnMaps[map.alias] = map.columnName;
-            }
+            _sqlInfo.AddColumnMaps(maps);
             return this;
         }
         public IQuery Join<T>(string tableAlias, string join, JoinTypeEnum joinType = JoinTypeEnum.INNER)
         {
-            var newJoin = new JoinInfo()
+            var newJoin = new JoinInfoModel()
             {
                 Table = CreateTable<T>(tableAlias),
                 On = join
@@ -44,21 +40,30 @@ namespace SQLQueryBuilder.SQLBuilder
             _sqlInfo.Joins.Add(newJoin);
             return this;
         }
-        public IQueryFilter GroupBy(string groupBy)
+        public IQueryFilter GroupBy(string groupBy = null)
         {
-            _sqlInfo.GroupBy = groupBy;
+            if(groupBy != null)
+            {
+                var colName = _sqlInfo.GetMappedColumnName(groupBy.Trim());
+                _sqlInfo.GroupBy = $"{colName}";
+            }
             return this;
         }
-        public IQueryFilter OrderBy(string orderBy, OrderTypeEnum order = Model.Enum.OrderTypeEnum.DESC)
+        public IQueryFilter OrderBy(string orderBy = null, OrderTypeEnum order = OrderTypeEnum.DESC)
         {
-            _sqlInfo.OrderBy = $"{orderBy.Trim()} {order.ToString()}";
+            if(orderBy != null)
+            {
+                var colName = _sqlInfo.GetMappedColumnName(orderBy.Trim());
+                _sqlInfo.OrderBy = $"{colName} {order.ToString()}";
+            }
             return this;
         }
-        public IQueryFilter Where(Expr expr)
+        public IQueryFilter Where(ExpressionModel expr = null)
         {
-            var parameters = new DynamicParameters();
+            if (expr == null) return this;
 
-            string Visit(Expr expr)
+            var parameters = new DynamicParameters();
+            string Visit(ExpressionModel expr)
             {
                 if (expr is BinaryExpr binary)
                 {
@@ -68,25 +73,14 @@ namespace SQLQueryBuilder.SQLBuilder
                 }
                 else if (expr is ComparisonExpr comparison)
                 {
-                    var columnName = GetColumnName(_sqlInfo.Root.Type, comparison.Identifier);
-
-                    if (columnName == null)
-                    {
-                        throw new InvalidFilterCriteriaException($"Cannot Find Column With The Name '{comparison.Identifier}'");
-                    }
-
-                    var hasAlias = _columnMaps.TryGetValue(columnName, out var colWithAlias);
+                    var columnName = _sqlInfo.GetMappedColumnName(comparison.Identifier);
 
                     var param = $"@p{_index++}";
                     var value = FormatValue(comparison.Op, comparison.Value);
                     var op = NormalizeOperator(comparison.Op);
 
                     parameters.Add(param, value);
-
-                    var finalName = hasAlias ? colWithAlias : $"{_sqlInfo.Root.Alias}.{columnName}";
-                    Console.WriteLine($"{param}: {finalName} val: {value}");
-
-                    return $"{finalName} {op} {param}";
+                    return $"{columnName} {op} {param}";
                 }
 
                 throw new Exception("Unknown expression");
@@ -109,36 +103,22 @@ namespace SQLQueryBuilder.SQLBuilder
                 ));
             }
 
-            if (!string.IsNullOrEmpty(_sqlInfo.Where))
+            if (!string.IsNullOrWhiteSpace(_sqlInfo.Where))
                 parts.Add($"WHERE {_sqlInfo.Where}");
 
-            if (!string.IsNullOrEmpty(_sqlInfo.GroupBy))
+            if (!string.IsNullOrWhiteSpace(_sqlInfo.GroupBy))
                 parts.Add($"GROUP BY {_sqlInfo.GroupBy}");
 
-            if (!string.IsNullOrEmpty(_sqlInfo.OrderBy))
+            if (!string.IsNullOrWhiteSpace(_sqlInfo.OrderBy))
                 parts.Add($"ORDER BY {_sqlInfo.OrderBy}");
 
-            var sql = string.Join("\n", parts);
+            var sql = string.Join(" ", parts);
 
             return (sql, _sqlInfo.Parameters);
         }
         private string GetTableName(Type TableType) => TableType.GetCustomAttribute<TableAttribute>()?.Name ?? TableType.Name;
-        private string GetColumnName(Type classType, string propertyName)
-        {
-            var prop = classType.GetProperty(
-                propertyName,
-                BindingFlags.Public |
-                BindingFlags.Instance |
-                BindingFlags.IgnoreCase);
-
-            if (prop == null)
-                return null;
-
-            return prop.GetCustomAttribute<ColumnAttribute>()?.Name ?? prop.Name;
-        }
         private void Reset()
         {
-            _columnMaps.Clear();
             _sqlInfo = null;
             _index = 0;
         }
@@ -159,12 +139,12 @@ namespace SQLQueryBuilder.SQLBuilder
                 _ => op
             };
         }
-        private TableRef CreateTable<T>(string alias)
+        private TableRefModel CreateTable<T>(string alias)
         {
             var type = typeof(T);
             var tableName = GetTableName(type);
 
-            return new TableRef()
+            return new TableRefModel()
             {
                 Name = tableName,
                 Type = type,

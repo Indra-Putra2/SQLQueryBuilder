@@ -9,10 +9,12 @@
 
   <ItemGroup>
     <PackageReference Include="Dapper" Version="2.1.72" />
-    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.7" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.6" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.6" />
-    <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Update="Test.cs">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Compile>
   </ItemGroup>
 
 </Project>

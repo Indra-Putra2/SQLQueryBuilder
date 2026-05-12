@@ -1,4 +1,4 @@
-﻿using SQLQueryBuilder.Model.Interface;
+﻿using SQLQueryBuilder.Interface;
 
 namespace SQLQueryBuilder.SQLBuilder
 {

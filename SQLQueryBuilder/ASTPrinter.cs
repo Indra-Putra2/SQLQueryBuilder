@@ -4,12 +4,12 @@ namespace SQLQueryBuilder
 {
     internal static class AstPrinter
     {
-        public static void Print(Expr expr, string indent = "", string title = "", bool isLast = true)
+        public static void Print(ExpressionModel expr, string indent = "", string title = "", bool isLast = true)
         {
             Console.WriteLine(title);
             PrintInternal(expr, indent, isLast);
         }
-        private static void PrintInternal(Expr expr, string indent = "", bool isLast = true)
+        private static void PrintInternal(ExpressionModel expr, string indent = "", bool isLast = true)
         {
             Console.Write(indent);
             Console.Write(isLast ? "└── " : "├── ");
