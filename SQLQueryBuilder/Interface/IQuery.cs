@@ -1,6 +1,6 @@
 ﻿using Dapper;
 using SQLQueryBuilder.Enum;
-using SQLQueryBuilder.Model.ASTModel;
+using ASTBuilder.Abstraction;
 
 namespace SQLQueryBuilder.Interface
 {
@@ -12,9 +12,9 @@ namespace SQLQueryBuilder.Interface
     {
         IQuery MapField(params (string columnName, string alias)[] maps);
         IQuery Join<T>(string tableAlias, string join, JoinTypeEnum joinType = JoinTypeEnum.INNER);
-        IQueryFilter Where(ExpressionModel expr = null);
-        IQueryFilter OrderBy(string orderBy = null, OrderTypeEnum order = OrderTypeEnum.DESC);
-        IQueryFilter GroupBy(string groupBy = null);
+        IQueryFilter Where(IExpression expr = null!);
+        IQueryFilter OrderBy(string orderBy = null!, OrderTypeEnum order = OrderTypeEnum.DESC);
+        IQueryFilter GroupBy(string groupBy = null!);
         (string, DynamicParameters) Build();
     }
 
@@ -24,6 +24,4 @@ namespace SQLQueryBuilder.Interface
         IQueryFilter GroupBy(string groupBy);
         (string, DynamicParameters) Build();
     }
-
-
 }

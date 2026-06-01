@@ -1,4 +1,4 @@
-﻿namespace SQLQueryBuilder.Model.SQLBuilderModel
+﻿namespace SQLQueryBuilder.Model
 {
     internal class TableRefModel
     {

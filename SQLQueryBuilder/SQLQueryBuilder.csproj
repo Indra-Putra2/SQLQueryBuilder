@@ -12,9 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Update="Test.cs">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-    </Compile>
+    <ProjectReference Include="..\..\ASTBuilder\ASTBuilder\ASTBuilder.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,5 +1,5 @@
 ﻿using SQLQueryBuilder.Enum;
-using SQLQueryBuilder.Model.SQLBuilderModel;
+using SQLQueryBuilder.Model;
 
 internal class JoinInfoModel
 {
