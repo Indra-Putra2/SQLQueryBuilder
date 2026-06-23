@@ -12,7 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\ASTBuilder\ASTBuilder\ASTBuilder.csproj" />
+    <ProjectReference Include="..\..\ASTBuilder\ASTBuilder.Core\ASTBuilder.Core.csproj" />
   </ItemGroup>
 
 </Project>

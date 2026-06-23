@@ -1,5 +1,6 @@
 ﻿using Dapper;
 using SQLQueryBuilder.Attributes;
+using SQLQueryBuilder.Enum;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Reflection;
 
@@ -11,32 +12,75 @@ namespace SQLQueryBuilder.Model
     /// </summary>
     internal class SQLInfoModel
     {
-        // Tracks validated columns present on the entity schemas to catch syntax mistakes early
-        private HashSet<string> _columnNames = new(StringComparer.OrdinalIgnoreCase);
-
-        // Tracks manual mappings between custom field tracking keys and their true column counterparts
-        private Dictionary<string, string> _columnMaps = new(StringComparer.OrdinalIgnoreCase);
-
         private TableRefModel _root = null!;
 
-        public required TableRefModel Root
+        public TableRefModel Root
         {
             get => _root;
             init
             {
                 _root = value;
-                _columnNames = GetColumnName(); // Scans target model fields as soon as the baseline root table is initialized
+            }
+        }
+        private Dictionary<string, List<string>> _validColumns = new Dictionary<string, List<string>>();
+        public string _rawSelectedColumns {  get; set; }
+        
+        private List<ColumnMetadataModel> _parsedSelected = new();
+        public List<ColumnMetadataModel> ParsedSelected
+        {
+            get => _parsedSelected;
+            set
+            {
+                _parsedSelected = value;
             }
         }
 
-        private string _selectedColumns = null!;
-        public string SelectedColumns
+        private bool _selectAll = false;
+
+        public void validateSelected(List<ColumnMetadataModel> select)
         {
-            get => _selectedColumns;
-            set => _selectedColumns =
-                string.IsNullOrWhiteSpace(value)
-                    ? throw new ArgumentException("You must specify columns.", nameof(SelectedColumns))
-                    : value.Trim();
+            foreach (var selected in select)
+            {
+                // --- 1. EXPRESSION PATHWAY ---
+                if (selected.IsExpression)
+                {
+                    if (selected.ColumnName.Contains("*") && Joins.Count > 0)
+                    {
+                        PrintWildcardWarning();
+                        // Removed 'continue' so we can still validate the alias below if it exists
+                    }
+
+                    if (string.IsNullOrWhiteSpace(selected.Alias))
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine($"WARNING! Found an expression \n{selected.ColumnName}\n with no Alias this will not be able to be filtered later!");
+                        Console.ResetColor();
+                    }
+                    else
+                    {
+                        // Validates against the C# class target
+                        CheckValidColumn(selected.Alias);
+                    }
+                }
+                // --- 2. STANDARD COLUMN PATHWAY ---
+                else
+                {
+                    if (selected.ColumnName.Contains("*"))
+                    {
+                        if (selected.TableAlias != _root.Alias && Joins.Count > 0)
+                        {
+                            PrintWildcardWarning();
+                        }
+                        // Wildcards (* or t.*) can't be mapped directly to a single C# property name,
+                        // so we skip CheckValidColumn for them entirely.
+                        continue;
+                    }
+
+                    // Validates Alias if present (C# target), otherwise falls back to ColumnName
+                    var propertyToValidate = selected.Alias ?? selected.ColumnName;
+                    CheckValidColumn(propertyToValidate);
+                }
+            }
         }
 
         public List<JoinInfoModel> Joins { get; set; } = new();
@@ -54,6 +98,7 @@ namespace SQLQueryBuilder.Model
             get => _orderBy;
             set => _orderBy = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
         }
+        public OrderTypeEnum orderType { get; set; }
 
         private string _groupBy = string.Empty;
         public string GroupBy
@@ -65,54 +110,53 @@ namespace SQLQueryBuilder.Model
         /// <summary> Parameter state definitions to pass down cleanly into consumer layers like Dapper. </summary>
         public DynamicParameters? Parameters { get; set; }
 
-        /// <summary>
-        /// Validates a raw column string input name against known properties. 
-        /// Returns the fully qualified statement snippet format (e.g., "alias.ColumnName").
-        /// </summary>
-        public string GetMappedColumnName(string columnName)
+        public string CheckValidColumn(string columnName)
         {
-            // Fails early if application layer code tries filtering against an invalid or completely missing entity field context
-            if (!_columnNames.TryGetValue(columnName, out var rawName))
+            // Loop through the column lists in our dictionary
+            foreach (var columnList in _validColumns.Values)
             {
-                throw new InvalidFilterCriteriaException($"Cannot Find Column With The Name '{columnName}'");
+                // Use OrdinalIgnoreCase so "Price" matches "price" safely
+                var matchedColumn = columnList.FirstOrDefault(c => 
+                    string.Equals(c, columnName, StringComparison.OrdinalIgnoreCase));
+
+                // If found, return the exact database-cased name
+                if (matchedColumn != null) 
+                    return matchedColumn;
             }
 
-            // Checks if a custom manual field map override registration exists for this property
-            if (_columnMaps.TryGetValue(rawName, out var colWithAlias))
-            {
-                return colWithAlias;
-            }
-
-            return $"{Root.Alias}.{rawName}";
+            throw new InvalidDataException($"Column with the name '{columnName}' doesn't exist inside the class!");
         }
 
-        /// <summary> Configures structural mappings linking properties to specific tracking target definitions safely. </summary>
-        public void AddColumnMaps(IEnumerable<(string columnName, string Alias)> maps)
+        internal void BuildValidColums()
         {
-            foreach (var map in maps)
+            _validColumns[Root.Name] = GetPropertieNames(Root.Type);
+            foreach (var join in Joins.Select(j => j.Table))
             {
-                if (_columnMaps.ContainsKey(map.columnName))
-                {
-                    throw new InvalidFilterCriteriaException($"Map With The Name {map.columnName} already Exist!");
-                }
-
-                _columnMaps[map.Alias] = map.columnName;
+                _validColumns[join.Name] = GetPropertieNames(join.Type);
             }
         }
 
-        /// <summary>
-        /// Uses reflection to scan the structural properties of your root entity model. 
-        /// Populates a cache mapping valid physical columns while safely ignoring excluded attributes.
-        /// </summary>
-        private HashSet<string> GetColumnName()
+        private List<string> GetPropertieNames(Type type)
         {
-            return Root.Type
-                .GetProperties()
-                .Where(p =>
-                    p.GetCustomAttribute<NotMappedAttribute>() == null &&
-                    p.GetCustomAttribute<IgnoreAttribute>() == null) // Drops elements flagged for exclusion
-                .Select(p => p.GetCustomAttribute<ColumnAttribute>()?.Name ?? p.Name) // Adopts custom names over defaults when provided
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                // Keep properties ONLY if they DO NOT have Ignore or NotMapped
+                .Where(p => p.GetCustomAttribute<IgnoreAttribute>() == null
+                         && p.GetCustomAttribute<NotMappedAttribute>() == null)
+                // Safely check for ColumnAttribute name, fallback to property name
+                .Select(p => p.GetCustomAttribute<ColumnAttribute>()?.Name ?? p.Name)
+                .ToList();
+        }
+
+        private void PrintWildcardWarning()
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("╔══════════════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║ WARNING: You are joining tables and using a wildcard (*) selection.      ║");
+            Console.WriteLine("║ SQL will flatten these tables. If they share duplicate column names      ║");
+            Console.WriteLine("║ (like 'Id', 'CreatedAt'), your query WILL fail or Dapper will misbind!   ║");
+            Console.WriteLine("║ Best Practice: Explicitly select columns with aliases (e.g., t1.Id as X) ║");
+            Console.WriteLine("╚══════════════════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
         }
     }
 }

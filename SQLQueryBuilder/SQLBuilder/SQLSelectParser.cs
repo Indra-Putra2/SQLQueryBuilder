@@ -1,18 +1,20 @@
-﻿using System.Text;
+﻿using SQLQueryBuilder.Model;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace SQLQueryBuilder.SQLBuilder
 {
-    internal static class SQLSelectParser
+    internal class SQLSelectParser
     {
-        private static string _input = string.Empty;
-        private static int _index = 0;
-        private static Queue<string> _strings;
+        private string _input = string.Empty;
+        private int _index = 0;
+        private List<ColumnMetadataModel> _columns;
 
-        private static char Peek() => IsAtEnd() ? '\0' : _input[_index];
-        private static char Consume() => IsAtEnd() ? throw new Exception($"Consume past end at Index={_index}") : _input[_index++];
-        private static bool IsAtEnd() => _index >= _input.Length;
+        private char Peek() => IsAtEnd() ? '\0' : _input[_index];
+        private char Consume() => IsAtEnd() ? throw new Exception($"Consume past end at Index={_index}") : _input[_index++];
+        private bool IsAtEnd() => _index >= _input.Length;
 
-        public static Queue<string> Parse(string input)
+        public List<ColumnMetadataModel> Parse(string input)
         {
             Init(input);
             var result = new StringBuilder();
@@ -26,7 +28,7 @@ namespace SQLQueryBuilder.SQLBuilder
                 else if (c == ',')
                 {
                     Consume(); // Eat the comma
-                    ProcessAndEnqueue(result.ToString());
+                    ProcessAndAdd(result.ToString());
                     result.Clear();
                 }
                 else
@@ -34,12 +36,12 @@ namespace SQLQueryBuilder.SQLBuilder
                     result.Append(Consume());
                 }
             }
-            if (result.Length > 0) ProcessAndEnqueue(result.ToString());
+            if (result.Length > 0) ProcessAndAdd(result.ToString());
 
-            return _strings;
+            return _columns;
         }
 
-        private static string ParseQuote()
+        private string ParseQuote()
         {
             char quoteChar = Peek();
             if (quoteChar != '"' && quoteChar != '\'')
@@ -63,7 +65,7 @@ namespace SQLQueryBuilder.SQLBuilder
             return result.ToString();
         }
 
-        private static string ParseParenthesis()
+        private string ParseParenthesis()
         {
             if (Peek() != '(')
                 throw new InvalidOperationException($"Expected a parenthesis but got {Peek()} instead! at index:{_index}");
@@ -109,7 +111,7 @@ namespace SQLQueryBuilder.SQLBuilder
             return result.ToString();
         }
 
-        private static string ParseCase()
+        private string ParseCase()
         {
             if (CASECheck())
             {
@@ -154,14 +156,14 @@ namespace SQLQueryBuilder.SQLBuilder
             throw new InvalidOperationException($"Expected CASE but got {Peek()} instead! at index:{_index}");
         }
 
-        private static void Init(string input)
+        private void Init(string input)
         {
             _input = input;
             _index = 0;
-            _strings = new Queue<string>();
+            _columns = new List<ColumnMetadataModel>();
         }
 
-        private static bool CASECheck()
+        private bool CASECheck()
         {
             if (_index + 3 < _input.Length)
             {
@@ -174,7 +176,7 @@ namespace SQLQueryBuilder.SQLBuilder
             return false;
         }
 
-        private static bool ENDCheck()
+        private bool ENDCheck()
         {
             if (_index + 2 < _input.Length)
             {
@@ -187,16 +189,24 @@ namespace SQLQueryBuilder.SQLBuilder
             return false;
         }
 
-        private static void ProcessAndEnqueue(string rawChunk)
+        private void ProcessAndAdd(string rawChunk)
         {
-            string trimmed = rawChunk.Trim();
+            string trimmed = Regex.Replace(rawChunk.Trim(), @"\s+", " ");
             if (string.IsNullOrEmpty(trimmed)) return;
 
             // If it ends with a parenthesis, it's a function call with NO alias
             if (trimmed.EndsWith(')'))
             {
-                _strings.Enqueue(trimmed);
-                Console.WriteLine($"Column: {trimmed} | Alias: None");
+                var columnData = new ColumnMetadataModel()
+                {
+                    OriginalQuery = trimmed,
+                    TableAlias = null,
+                    ColumnName = trimmed,
+                    Alias = null,
+                    IsExpression = true
+                };
+
+                _columns.Add(columnData);
                 return;
             }
 
@@ -204,7 +214,7 @@ namespace SQLQueryBuilder.SQLBuilder
             char lastChar = trimmed[i];
 
             // Case 1: The alias is wrapped in quotes or brackets
-            if (lastChar == '"' || lastChar == '\'' || lastChar == ']')
+            if (lastChar == '"' || lastChar == '\'' || lastChar == ']' || lastChar == '`')
             {
                 char targetOpen = lastChar == ']' ? '[' : lastChar;
                 i--; // Skip past the closing boundary marker
@@ -227,9 +237,17 @@ namespace SQLQueryBuilder.SQLBuilder
 
                 // Clean up structural quotes for the output representation
                 string cleanAlias = alias.Substring(1, alias.Length - 2);
+                
+                var columnData = new ColumnMetadataModel()
+                {
+                    OriginalQuery = trimmed,
+                    TableAlias = null,
+                    ColumnName = expression,
+                    Alias = cleanAlias,
+                    IsExpression = true
+                };
 
-                Console.WriteLine($"Column: {expression} | Alias Found: {cleanAlias}");
-                _strings.Enqueue(cleanAlias);
+                _columns.Add(columnData);
                 return;
             }
 
@@ -244,20 +262,59 @@ namespace SQLQueryBuilder.SQLBuilder
             {
                 string alias = trimmed.Substring(i + 1).Trim();
                 string expression = trimmed.Substring(0, i).TrimEnd();
+                // check if the left-side expression contains parentheses or math.
+                // If it doesn't, it's a plain column with an alias (e.g., "c.first_name alias")
+                bool isExpr = expression.Contains('(') || expression.Contains(')') || expression.Contains('+');
 
                 if (expression.EndsWith(" AS", StringComparison.OrdinalIgnoreCase))
                 {
                     expression = expression.Substring(0, expression.Length - 3).TrimEnd();
                 }
 
-                Console.WriteLine($"Column: {expression} | Alias Found: {alias}");
-                _strings.Enqueue(alias);
+                string? tableAlias = null;
+                string columnName = expression; //clean expression
+
+                if (!isExpr && expression.Contains('.'))
+                {
+                    var parts = expression.Split('.');
+                    tableAlias = parts[0];
+                    columnName = parts[1];
+                }
+
+                var columnData = new ColumnMetadataModel()
+                {
+                    OriginalQuery = trimmed,
+                    TableAlias = isExpr ? null : tableAlias,
+                    ColumnName = columnName,
+                    Alias = alias,
+                    IsExpression = isExpr
+                };
+
+                _columns.Add(columnData);
             }
             else
             {
                 // No space found at all, it's just a raw target column like "usr.user_id"
-                Console.WriteLine($"Column: {trimmed} | Alias: None");
-                _strings.Enqueue(trimmed);
+                string? tableAlias = null;
+                string columnName = trimmed;
+
+                if (trimmed.Contains('.'))
+                {
+                    var parts = trimmed.Split('.');
+                    tableAlias = parts[0];
+                    columnName = parts[1];
+                }
+
+                var columnData = new ColumnMetadataModel()
+                {
+                    OriginalQuery = trimmed,
+                    TableAlias = tableAlias,
+                    ColumnName = columnName,
+                    Alias = null,
+                    IsExpression = false
+                };
+
+                _columns.Add(columnData);
             }
         }
     }

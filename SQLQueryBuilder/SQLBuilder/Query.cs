@@ -1,5 +1,4 @@
-﻿using ASTBuilder.Abstraction;
-using ASTBuilder.ASTModel;
+﻿using ASTBuilder.Core.ASTModel;
 using Dapper;
 using SQLQueryBuilder.Enum;
 using SQLQueryBuilder.Interface;
@@ -16,8 +15,11 @@ namespace SQLQueryBuilder.SQLBuilder
     /// <typeparam name="Root">The primary database model/table type mapping the initial query source.</typeparam>
     public class Query<Root> : IQuerySelect, IQuery, IQueryFilter
     {
-        private int _index = 0; // Tracks unique counter IDs for generated SQL parameters (e.g., @p0, @p1)
         private SQLInfoModel _sqlInfo;
+        private SQLSelectParser _selectParser = new SQLSelectParser();
+        private ExpressionModel _rawWhere;
+        private string _cachedSqlBase;
+        private bool _isBaseCompiled;
 
         public Query(string alias)
         {
@@ -30,16 +32,10 @@ namespace SQLQueryBuilder.SQLBuilder
         }
 
         /// <summary> Specifies the exact column block string to inject into the SELECT statement. </summary>
-        public IQuery Select(string colums)
+        public IQuery Select(string columns)
         {
-            _sqlInfo.SelectedColumns = colums;
-            return this;
-        }
-
-        /// <summary> Registers explicit manual column/alias overrides within state tracking tracking. </summary>
-        public IQuery MapField(params (string columnName, string alias)[] maps)
-        {
-            _sqlInfo.AddColumnMaps(maps);
+            _sqlInfo._rawSelectedColumns = columns;
+            _sqlInfo.ParsedSelected = _selectParser.Parse(columns);
             return this;
         }
 
@@ -48,35 +44,29 @@ namespace SQLQueryBuilder.SQLBuilder
         /// </summary>
         public IQuery Join<T>(string tableAlias, string joinOnCondition, JoinTypeEnum joinType = JoinTypeEnum.INNER)
         {
-            var newJoin = new JoinInfoModel()
+            var join = new JoinInfoModel()
             {
                 Table = CreateTable<T>(tableAlias),
                 On = joinOnCondition,
-                JoinType = joinType // Note: Fixed structural bug: assigned property to match builder output loop
+                JoinType = joinType
             };
-            _sqlInfo.Joins.Add(newJoin);
+
+            _sqlInfo.Joins.Add(join);
             return this;
         }
 
         /// <summary> Appends a validated GROUP BY criteria target. </summary>
         public IQueryFilter GroupBy(string groupBy = null)
         {
-            if (groupBy != null)
-            {
-                var colName = _sqlInfo.GetMappedColumnName(groupBy.Trim());
-                _sqlInfo.GroupBy = $"{colName}";
-            }
+            _sqlInfo.GroupBy = groupBy.Trim() ?? string.Empty;
             return this;
         }
 
         /// <summary> Appends a validated ORDER BY sequence tracking structure. </summary>
         public IQueryFilter OrderBy(string orderBy = null, OrderTypeEnum order = OrderTypeEnum.DESC)
         {
-            if (orderBy != null)
-            {
-                var colName = _sqlInfo.GetMappedColumnName(orderBy.Trim());
-                _sqlInfo.OrderBy = $"{colName} {order.ToString()}";
-            }
+            _sqlInfo.OrderBy = orderBy.Trim() ?? string.Empty;
+            _sqlInfo.orderType = order;
             return this;
         }
 
@@ -84,53 +74,29 @@ namespace SQLQueryBuilder.SQLBuilder
         /// Translates an Abstract Syntax Tree (AST) expression design recursively into a safe, valid SQL string.
         /// Extracts raw constants safely into a clean, parameterized DynamicParameters collection.
         /// </summary>
-        public IQueryFilter Where(IExpression expr = null)
+        public IQueryFilter Where(ExpressionModel expr = null)
         {
             if (expr == null) return this;
-
-            var parameters = new DynamicParameters();
-
-            // Local helper function to walk down nested tree expressions recursively
-            string Visit(IExpression expr)
-            {
-                if (expr is BinaryExpr binary)
-                {
-                    // Handles logical grouping constructs like (X AND Y) or (A OR B)
-                    var left = Visit(binary.Left);
-                    var right = Visit(binary.Right);
-                    return $"({left} {binary.Op} {right})";
-                }
-                else if (expr is ComparisonExpr comparison)
-                {
-                    // Resolves field identifiers into their mapped target names (e.g. "alias.ColumnName")
-                    var columnName = _sqlInfo.GetMappedColumnName(comparison.Identifier);
-
-                    // Sanitizes literal code variables to neutralize threat vectors like SQL injection
-                    var param = $"@p{_index++}";
-                    var value = FormatValue(comparison.Op, comparison.Value);
-                    var op = NormalizeOperator(comparison.Op);
-
-                    parameters.Add(param, value);
-                    return $"{columnName} {op} {param}";
-                }
-
-                throw new Exception("Unknown expression structure passed to builder.");
-            }
-
-            _sqlInfo.Where = Visit(expr);
-            _sqlInfo.Parameters = parameters;
+            _rawWhere = expr;
             return this;
         }
 
         /// <summary>
         /// Assembles all registered metadata variables into a clean executable raw SQL string statement and parameters tuple pack.
         /// </summary>
-        public (string, DynamicParameters) Build()
+        public IQueryFilter CompileSqlBase()
         {
-            var parts = new List<string>();
+            if (_isBaseCompiled) return this;
 
-            parts.Add($"SELECT {_sqlInfo.SelectedColumns}");
-            parts.Add($"FROM {_sqlInfo.Root.Name} AS {_sqlInfo.Root.Alias}");
+            _sqlInfo.BuildValidColums(); // Now lightning fast due to SchemaCache!
+            _sqlInfo.validateSelected(_sqlInfo.ParsedSelected);
+
+            var parts = new List<string>
+        {
+            "WITH CTEWrapper AS (",
+            $"SELECT {_sqlInfo._rawSelectedColumns}",
+            $"FROM {_sqlInfo.Root.Name} AS {_sqlInfo.Root.Alias}"
+        };
 
             if (_sqlInfo.Joins.Count > 0)
             {
@@ -138,19 +104,34 @@ namespace SQLQueryBuilder.SQLBuilder
                     $"{j.JoinType} JOIN {j.Table.Name} AS {j.Table.Alias} ON {j.On}"
                 ));
             }
+            parts.Add(") SELECT * FROM CTEWrapper");
 
-            if (!string.IsNullOrWhiteSpace(_sqlInfo.Where))
-                parts.Add($"WHERE {_sqlInfo.Where}");
+            _cachedSqlBase = string.Join(" ", parts);
+            _isBaseCompiled = true;
+
+            return this;
+        }
+
+        public (string sql, DynamicParameters param) Build()
+        {
+            // 1. Ensure structural query base components are generated/cached
+            CompileSqlBase();
+
+            // 2. Parse variable dynamic segments per invocation pass
+            var (whereSql, parameters) = ParseExpression(_rawWhere);
+
+            var dynamicParts = new List<string> { _cachedSqlBase };
+
+            if (!string.IsNullOrWhiteSpace(whereSql))
+                dynamicParts.Add($"WHERE {whereSql}");
 
             if (!string.IsNullOrWhiteSpace(_sqlInfo.GroupBy))
-                parts.Add($"GROUP BY {_sqlInfo.GroupBy}");
+                dynamicParts.Add($"GROUP BY {_sqlInfo.CheckValidColumn(_sqlInfo.GroupBy)}");
 
             if (!string.IsNullOrWhiteSpace(_sqlInfo.OrderBy))
-                parts.Add($"ORDER BY {_sqlInfo.OrderBy}");
+                dynamicParts.Add($"ORDER BY {_sqlInfo.CheckValidColumn(_sqlInfo.OrderBy)}");
 
-            var sql = string.Join(" ", parts);
-
-            return (sql, _sqlInfo.Parameters);
+            return (string.Join(" ", dynamicParts), parameters);
         }
 
         /// <summary> Resolves a class type down to its true DB table identity by scanning for [Table] overrides. </summary>
@@ -159,7 +140,9 @@ namespace SQLQueryBuilder.SQLBuilder
         private void Reset()
         {
             _sqlInfo = null;
-            _index = 0;
+            _cachedSqlBase = null;
+            _isBaseCompiled = false;
+            _rawWhere = null;
         }
 
         /// <summary> Transforms structural parameters based on business logic rules (like wrapping strings for LIKE expressions). </summary>
@@ -195,6 +178,38 @@ namespace SQLQueryBuilder.SQLBuilder
                 Type = type,
                 Alias = alias
             };
+        }
+
+        private (string where, DynamicParameters param) ParseExpression(ExpressionModel exp)
+        {
+            var parameters = new DynamicParameters();
+            var index = 0;
+            // Local helper function to walk down nested tree expressions recursively
+            string Visit(ExpressionModel expr)
+            {
+                if (expr is BinaryExpr binary)
+                {
+                    // Handles logical grouping constructs like (X AND Y) or (A OR B)
+                    var left = Visit(binary.Left);
+                    var right = Visit(binary.Right);
+                    return $"({left} {binary.Op} {right})";
+                }
+                else if (expr is ComparisonExpr comparison)
+                {
+                    // Sanitizes literal code variables to neutralize threat vectors like SQL injection
+                    var param = $"@p{index++}";
+                    var column = _sqlInfo.CheckValidColumn(comparison.Identifier.Trim());
+                    var op = NormalizeOperator(comparison.Op);
+                    var value = FormatValue(comparison.Op, comparison.Value);
+
+                    parameters.Add(param, value);
+                    return $"{column} {op} {param}";
+                }
+                throw new Exception("Unknown expression structure passed to builder.");
+            }
+
+            var sql = Visit(exp);
+            return (sql, parameters);
         }
     }
 }

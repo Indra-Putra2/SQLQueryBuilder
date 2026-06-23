@@ -1,4 +1,4 @@
 <Solution>
-  <Project Path="../ASTBuilder/ASTBuilder/ASTBuilder.csproj" />
+  <Project Path="../ASTBuilder/ASTBuilder.Core/ASTBuilder.Core.csproj" />
   <Project Path="SQLQueryBuilder/SQLQueryBuilder.csproj" />
 </Solution>

@@ -1,10 +1,9 @@
 ﻿// Fixed the string concatenation to have proper spaces and correct closing parenthesis
-using SQLQueryBuilder.SQLBuilder;
-
 var test = "c.customer_id," +
     "CONCAT(c.first_name, ' ', c.last_name) AS customer_full_name," +
     "c.email_address AS contact_email, " +
     "COUNT(o.order_id) AS total_orders_placed," +
+    "COUNT(o.customer_id)," +
     "SUM(o.order_amount) AS \"Gross Revenue ($)\"," +
     "CASE " +
     "WHEN SUM(o.order_amount) >= 1000 THEN SUM(o.order_amount) * 0.85 " +
@@ -36,10 +35,5 @@ var wtf = "usr.user_id," +
     "        ORDER BY (stats.total_revenue - stats.total_cost) DESC, usr.created_at ASC" +
     "    ) AS internal_dept_rank";
 
-var test2 = "SUM(o.order_amount) AS \"Gross Revenue ($)\",usr.user_id";
-var items = SQLSelectParser.Parse(wtf);
-var x = 0;
-while (items.Count > 0)
-{
-    Console.WriteLine($"Item{++x}:{items.Dequeue()}");
-}
+var test2 = "(SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id) AS total_orders";
+
