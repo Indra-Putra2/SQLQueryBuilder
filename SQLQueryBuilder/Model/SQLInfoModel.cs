@@ -37,52 +37,6 @@ namespace SQLQueryBuilder.Model
 
         private bool _selectAll = false;
 
-        public void validateSelected(List<ColumnMetadataModel> select)
-        {
-            foreach (var selected in select)
-            {
-                // --- 1. EXPRESSION PATHWAY ---
-                if (selected.IsExpression)
-                {
-                    if (selected.ColumnName.Contains("*") && Joins.Count > 0)
-                    {
-                        PrintWildcardWarning();
-                        // Removed 'continue' so we can still validate the alias below if it exists
-                    }
-
-                    if (string.IsNullOrWhiteSpace(selected.Alias))
-                    {
-                        Console.ForegroundColor = ConsoleColor.Yellow;
-                        Console.WriteLine($"WARNING! Found an expression \n{selected.ColumnName}\n with no Alias this will not be able to be filtered later!");
-                        Console.ResetColor();
-                    }
-                    else
-                    {
-                        // Validates against the C# class target
-                        CheckValidColumn(selected.Alias);
-                    }
-                }
-                // --- 2. STANDARD COLUMN PATHWAY ---
-                else
-                {
-                    if (selected.ColumnName.Contains("*"))
-                    {
-                        if (selected.TableAlias != _root.Alias && Joins.Count > 0)
-                        {
-                            PrintWildcardWarning();
-                        }
-                        // Wildcards (* or t.*) can't be mapped directly to a single C# property name,
-                        // so we skip CheckValidColumn for them entirely.
-                        continue;
-                    }
-
-                    // Validates Alias if present (C# target), otherwise falls back to ColumnName
-                    var propertyToValidate = selected.Alias ?? selected.ColumnName;
-                    CheckValidColumn(propertyToValidate);
-                }
-            }
-        }
-
         public List<JoinInfoModel> Joins { get; set; } = new();
 
         private string _where = string.Empty;
@@ -96,30 +50,102 @@ namespace SQLQueryBuilder.Model
         public string OrderBy
         {
             get => _orderBy;
-            set => _orderBy = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+            set => _orderBy = string.IsNullOrWhiteSpace(value) ? string.Empty : ValidateColumn(value.Trim());
         }
-        public OrderTypeEnum orderType { get; set; }
+        public OrderTypeEnum OrderType { get; set; }
 
         private string _groupBy = string.Empty;
         public string GroupBy
         {
             get => _groupBy;
-            set => _groupBy = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+            set => _groupBy = string.IsNullOrWhiteSpace(value) ? string.Empty : ValidateColumn(value.Trim());
         }
 
         /// <summary> Parameter state definitions to pass down cleanly into consumer layers like Dapper. </summary>
         public DynamicParameters? Parameters { get; set; }
 
-        public string CheckValidColumn(string columnName)
+        public void validateSelected(List<ColumnMetadataModel> select)
         {
-            // Loop through the column lists in our dictionary
+            foreach (var selected in select)
+            {
+                // --- 1. EXPRESSION PATHWAY ---
+                if (selected.IsExpression)
+                {
+                    if (selected.ColumnName.Contains("*") && Joins.Count > 0)
+                    {
+                        PrintWildcardWarning();
+                    }
+
+                    if (string.IsNullOrWhiteSpace(selected.Alias))
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine($"WARNING! Found an expression \n{selected.ColumnName}\n with no Alias this will not be able to be filtered later!");
+                        Console.ResetColor();
+                    }
+                    else
+                    {
+                        ValidateTableAlias(selected.Alias);
+                        ValidateColumn(selected.Alias);
+                    }
+                }
+                // --- 2. STANDARD COLUMN PATHWAY ---
+                else
+                {
+                    if (selected.TableAlias != null)
+                    {
+                        ValidateTableAlias(selected.TableAlias);
+                    }
+
+                    if (selected.ColumnName.Contains("*"))
+                    {
+                        if (selected.TableAlias != _root.Alias && Joins.Count > 0)
+                        {
+                            PrintWildcardWarning();
+                        }
+                        continue;
+                    }
+
+                    var propertyToValidate = selected.Alias ?? selected.ColumnName;
+                    ValidateColumn(propertyToValidate);
+                }
+            }
+        }
+
+        public void ValidateJoin(List<ColumnMetadataModel> joins)
+        {
+            foreach (var join in joins)
+            {
+                if(join.TableAlias != null)
+                {
+                    ValidateTableAlias(join.TableAlias);
+                }
+
+                ValidateColumn(join.ColumnName);
+            }
+        }
+
+        private void ValidateTableAlias(string alias)
+        {
+            var isRootTable = string.Equals(alias, Root.Alias, StringComparison.InvariantCultureIgnoreCase);
+
+            if (!isRootTable)
+            {
+                var tableJoinExist = Joins.FirstOrDefault(j => string.Equals(j.Table?.Alias, alias, StringComparison.InvariantCultureIgnoreCase));
+
+                if (tableJoinExist == null)
+                {
+                    throw new InvalidDataException($"Table with the alias {alias} doesn't match any specified table alias");
+                }
+            }
+        }
+
+        public string ValidateColumn(string columnName)
+        {
             foreach (var columnList in _validColumns.Values)
             {
-                // Use OrdinalIgnoreCase so "Price" matches "price" safely
                 var matchedColumn = columnList.FirstOrDefault(c => 
                     string.Equals(c, columnName, StringComparison.OrdinalIgnoreCase));
 
-                // If found, return the exact database-cased name
                 if (matchedColumn != null) 
                     return matchedColumn;
             }
@@ -139,10 +165,8 @@ namespace SQLQueryBuilder.Model
         private List<string> GetPropertieNames(Type type)
         {
             return type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                // Keep properties ONLY if they DO NOT have Ignore or NotMapped
                 .Where(p => p.GetCustomAttribute<IgnoreAttribute>() == null
                          && p.GetCustomAttribute<NotMappedAttribute>() == null)
-                // Safely check for ColumnAttribute name, fallback to property name
                 .Select(p => p.GetCustomAttribute<ColumnAttribute>()?.Name ?? p.Name)
                 .ToList();
         }

@@ -1,6 +1,7 @@
 ﻿using Dapper;
 using SQLQueryBuilder.Enum;
 using ASTBuilder.Core.ASTModel;
+using SQLQueryBuilder.Model;
 
 namespace SQLQueryBuilder.Interface
 {
@@ -10,9 +11,9 @@ namespace SQLQueryBuilder.Interface
     }
     public interface IQuery
     {
-        IQuery Join<T>(string tableAlias, string join, JoinTypeEnum joinType = JoinTypeEnum.INNER);
+        IQuery Join<T>(string tableAlias, string joinCondition, JoinTypeEnum joinType = JoinTypeEnum.INNER);
         IQueryFilter Where(ExpressionModel expr = null!);
-        IQueryFilter OrderBy(string orderBy = null!, OrderTypeEnum order = OrderTypeEnum.DESC);
+        IQueryFilter OrderBy(OrderByModel order);
         IQueryFilter GroupBy(string groupBy = null!);
         (string sql, DynamicParameters param) Build();
         IQueryFilter CompileSqlBase();
@@ -21,7 +22,7 @@ namespace SQLQueryBuilder.Interface
     public interface IQueryFilter
     {
         IQueryFilter Where(ExpressionModel expr = null!);
-        IQueryFilter OrderBy(string orderBy, OrderTypeEnum order = OrderTypeEnum.DESC);
+        IQueryFilter OrderBy(OrderByModel order);
         IQueryFilter GroupBy(string groupBy);
         (string sql, DynamicParameters param) Build();
     }

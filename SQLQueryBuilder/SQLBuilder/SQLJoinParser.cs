@@ -1,12 +1,12 @@
 ﻿using SQLQueryBuilder.Model;
 
-namespace SQLQueryBuilder.SQLBuilder
+namespace SQLQueryBuilder.Builder
 {
     internal class SQLJoinParser
     {
-        public Queue<ColumnMetadataModel> Parse(string join)
+        public List<ColumnMetadataModel> Parse(string join)
         {
-            var queue = new Queue<ColumnMetadataModel>();
+            var queue = new List<ColumnMetadataModel>();
             var joinSplit = join.Split("=");
             foreach (var split in joinSplit)
             {
@@ -21,7 +21,7 @@ namespace SQLQueryBuilder.SQLBuilder
                     IsExpression = false
                 };
 
-                queue.Enqueue(metadata);
+                queue.Add(metadata);
             }
             return queue;
         }

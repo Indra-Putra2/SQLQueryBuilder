@@ -2,7 +2,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace SQLQueryBuilder.SQLBuilder
+namespace SQLQueryBuilder.Builder
 {
     internal class SQLSelectParser
     {

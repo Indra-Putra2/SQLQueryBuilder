@@ -6,7 +6,7 @@ using SQLQueryBuilder.Model;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Reflection;
 
-namespace SQLQueryBuilder.SQLBuilder
+namespace SQLQueryBuilder.Builder
 {
     /// <summary>
     /// Implements a fluent interface to construct SQL SELECT queries based on a starting <typeparamref name="Root"/> entity type.
@@ -17,6 +17,7 @@ namespace SQLQueryBuilder.SQLBuilder
     {
         private SQLInfoModel _sqlInfo;
         private SQLSelectParser _selectParser = new SQLSelectParser();
+        private SQLJoinParser _joinParser = new SQLJoinParser();
         private ExpressionModel _rawWhere;
         private string _cachedSqlBase;
         private bool _isBaseCompiled;
@@ -58,15 +59,15 @@ namespace SQLQueryBuilder.SQLBuilder
         /// <summary> Appends a validated GROUP BY criteria target. </summary>
         public IQueryFilter GroupBy(string groupBy = null)
         {
-            _sqlInfo.GroupBy = groupBy.Trim() ?? string.Empty;
+            _sqlInfo.GroupBy = groupBy?.Trim() ?? string.Empty;
             return this;
         }
 
         /// <summary> Appends a validated ORDER BY sequence tracking structure. </summary>
-        public IQueryFilter OrderBy(string orderBy = null, OrderTypeEnum order = OrderTypeEnum.DESC)
+        public IQueryFilter OrderBy(OrderByModel order)
         {
-            _sqlInfo.OrderBy = orderBy.Trim() ?? string.Empty;
-            _sqlInfo.orderType = order;
+            _sqlInfo.OrderBy = order.Column;
+            _sqlInfo.OrderType = order.OrderType;
             return this;
         }
 
@@ -76,7 +77,6 @@ namespace SQLQueryBuilder.SQLBuilder
         /// </summary>
         public IQueryFilter Where(ExpressionModel expr = null)
         {
-            if (expr == null) return this;
             _rawWhere = expr;
             return this;
         }
@@ -100,6 +100,11 @@ namespace SQLQueryBuilder.SQLBuilder
 
             if (_sqlInfo.Joins.Count > 0)
             {
+                foreach(var join in _sqlInfo.Joins)
+                {
+                    _sqlInfo.ValidateJoin(_joinParser.Parse(join.On));
+                }
+                
                 parts.AddRange(_sqlInfo.Joins.Select(j =>
                     $"{j.JoinType} JOIN {j.Table.Name} AS {j.Table.Alias} ON {j.On}"
                 ));
@@ -126,12 +131,12 @@ namespace SQLQueryBuilder.SQLBuilder
                 dynamicParts.Add($"WHERE {whereSql}");
 
             if (!string.IsNullOrWhiteSpace(_sqlInfo.GroupBy))
-                dynamicParts.Add($"GROUP BY {_sqlInfo.CheckValidColumn(_sqlInfo.GroupBy)}");
+                dynamicParts.Add($"GROUP BY {_sqlInfo.GroupBy}");
 
             if (!string.IsNullOrWhiteSpace(_sqlInfo.OrderBy))
-                dynamicParts.Add($"ORDER BY {_sqlInfo.CheckValidColumn(_sqlInfo.OrderBy)}");
+                dynamicParts.Add($"ORDER BY {_sqlInfo.OrderBy} {_sqlInfo.OrderType.ToString()}");
 
-            return (string.Join(" ", dynamicParts), parameters);
+            return (string.Join("\n", dynamicParts), parameters);
         }
 
         /// <summary> Resolves a class type down to its true DB table identity by scanning for [Table] overrides. </summary>
@@ -182,6 +187,8 @@ namespace SQLQueryBuilder.SQLBuilder
 
         private (string where, DynamicParameters param) ParseExpression(ExpressionModel exp)
         {
+            if(exp == null) return ("",new DynamicParameters());
+
             var parameters = new DynamicParameters();
             var index = 0;
             // Local helper function to walk down nested tree expressions recursively
@@ -198,7 +205,7 @@ namespace SQLQueryBuilder.SQLBuilder
                 {
                     // Sanitizes literal code variables to neutralize threat vectors like SQL injection
                     var param = $"@p{index++}";
-                    var column = _sqlInfo.CheckValidColumn(comparison.Identifier.Trim());
+                    var column = _sqlInfo.ValidateColumn(comparison.Identifier.Trim());
                     var op = NormalizeOperator(comparison.Op);
                     var value = FormatValue(comparison.Op, comparison.Value);
 

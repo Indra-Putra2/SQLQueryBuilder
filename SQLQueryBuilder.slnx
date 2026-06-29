@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="../ASTBuilder/ASTBuilder.Core/ASTBuilder.Core.csproj" />
+  <Project Path="../HardwareInventoryLibrary/HardwareInventoryLibrary/HardwareInventoryLibrary.csproj" />
   <Project Path="SQLQueryBuilder/SQLQueryBuilder.csproj" />
 </Solution>

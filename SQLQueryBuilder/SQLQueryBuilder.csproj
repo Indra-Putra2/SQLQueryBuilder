@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -13,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\ASTBuilder\ASTBuilder.Core\ASTBuilder.Core.csproj" />
+    <ProjectReference Include="..\..\HardwareInventoryLibrary\HardwareInventoryLibrary\HardwareInventoryLibrary.csproj" />
   </ItemGroup>
 
 </Project>
