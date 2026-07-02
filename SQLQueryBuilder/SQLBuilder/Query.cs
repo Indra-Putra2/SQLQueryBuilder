@@ -49,6 +49,7 @@ namespace SQLQueryBuilder.Builder
             {
                 Table = CreateTable<T>(tableAlias),
                 On = joinOnCondition,
+                ParesedOnCondition = _joinParser.Parse(joinOnCondition),
                 JoinType = joinType
             };
 
@@ -91,25 +92,42 @@ namespace SQLQueryBuilder.Builder
             _sqlInfo.BuildValidColums(); // Now lightning fast due to SchemaCache!
             _sqlInfo.validateSelected(_sqlInfo.ParsedSelected);
 
+            var select = string.Join(",\n", _sqlInfo.ParsedSelected
+                .Select(s => 
+                {
+                    var column = string.IsNullOrWhiteSpace(s.TableAlias) ? s.ColumnName : $"{s.TableAlias}.{s.ColumnName}";
+                    var finalColumn = string.IsNullOrWhiteSpace(s.Alias) ? column : $"{column} AS {s.Alias}";
+
+                    return finalColumn;
+                }));
+
             var parts = new List<string>
-        {
-            "WITH CTEWrapper AS (",
-            $"SELECT {_sqlInfo._rawSelectedColumns}",
-            $"FROM {_sqlInfo.Root.Name} AS {_sqlInfo.Root.Alias}"
-        };
+            {
+                "WITH CTEWrapper AS (",
+                $"\nSELECT {select}",
+                $"\nFROM {_sqlInfo.Root.Name} AS {_sqlInfo.Root.Alias}"
+            };
 
             if (_sqlInfo.Joins.Count > 0)
             {
+                string On = string.Empty;
                 foreach(var join in _sqlInfo.Joins)
                 {
                     _sqlInfo.ValidateJoin(_joinParser.Parse(join.On));
+                    On = string.Join(" = ", join.ParesedOnCondition
+                        .Select(s =>
+                        {
+                            var column = string.IsNullOrWhiteSpace(s.TableAlias) ? s.ColumnName : $"{s.TableAlias}.{s.ColumnName}";
+
+                            return column;
+                        }));
                 }
                 
                 parts.AddRange(_sqlInfo.Joins.Select(j =>
-                    $"{j.JoinType} JOIN {j.Table.Name} AS {j.Table.Alias} ON {j.On}"
+                    $"\n{j.JoinType} JOIN {j.Table.Name} AS {j.Table.Alias} ON {On}"
                 ));
             }
-            parts.Add(") SELECT * FROM CTEWrapper");
+            parts.Add("\n) SELECT * FROM CTEWrapper");
 
             _cachedSqlBase = string.Join(" ", parts);
             _isBaseCompiled = true;
@@ -205,7 +223,7 @@ namespace SQLQueryBuilder.Builder
                 {
                     // Sanitizes literal code variables to neutralize threat vectors like SQL injection
                     var param = $"@p{index++}";
-                    var column = _sqlInfo.ValidateColumn(comparison.Identifier.Trim());
+                    var column = _sqlInfo.ValidateColumnOrAlias(comparison.Identifier.Trim());
                     var op = NormalizeOperator(comparison.Op);
                     var value = FormatValue(comparison.Op, comparison.Value);
 

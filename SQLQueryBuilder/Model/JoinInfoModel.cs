@@ -15,5 +15,6 @@ internal class JoinInfoModel
             _on = value.Trim();
         }
     }
+    public required List<ColumnMetadataModel> ParesedOnCondition = new();
     public JoinTypeEnum JoinType { get; init; }
 }

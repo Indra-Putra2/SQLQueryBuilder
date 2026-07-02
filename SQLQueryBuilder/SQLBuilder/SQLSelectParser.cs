@@ -8,7 +8,7 @@ namespace SQLQueryBuilder.Builder
     {
         private string _input = string.Empty;
         private int _index = 0;
-        private List<ColumnMetadataModel> _columns;
+        private List<ColumnMetadataModel> _columns = new();
 
         private char Peek() => IsAtEnd() ? '\0' : _input[_index];
         private char Consume() => IsAtEnd() ? throw new Exception($"Consume past end at Index={_index}") : _input[_index++];
@@ -22,13 +22,28 @@ namespace SQLQueryBuilder.Builder
             while (!IsAtEnd())
             {
                 var c = Peek();
-                if (c == '\'' || c == '"') result.Append(ParseQuote());
-                else if (c == '(') result.Append(ParseParenthesis());
-                else if (CASECheck()) result.Append(ParseCase());
+                if (c == '\'' || c == '"')
+                {
+                    result.Append(ParseQuote());
+                }
+                else if (c == '(')
+                {
+                    result.Append(ParseParenthesis());
+                }
+                else if (CASECheck())
+                {
+                    result.Append(ParseCase());
+                }
                 else if (c == ',')
                 {
                     Consume(); // Eat the comma
-                    ProcessAndAdd(result.ToString());
+
+                    // SAFE GUARD: Only process if we actually accumulated something meaningful
+                    string currentChunk = result.ToString().Trim();
+                    if (!string.IsNullOrEmpty(currentChunk))
+                    {
+                        ProcessAndAdd(currentChunk);
+                    }
                     result.Clear();
                 }
                 else
@@ -36,7 +51,13 @@ namespace SQLQueryBuilder.Builder
                     result.Append(Consume());
                 }
             }
-            if (result.Length > 0) ProcessAndAdd(result.ToString());
+
+            // SAFE GUARD: Handle the final column safely, ignoring trailing whitespace/commas
+            string finalChunk = result.ToString().Trim();
+            if (!string.IsNullOrEmpty(finalChunk))
+            {
+                ProcessAndAdd(finalChunk);
+            }
 
             return _columns;
         }
@@ -49,19 +70,17 @@ namespace SQLQueryBuilder.Builder
 
             var start = _index;
             var result = new StringBuilder();
-
-            result.Append(Consume());   // Consume opening quote
+            result.Append(Consume());
 
             while (!IsAtEnd() && Peek() != quoteChar)
             {
                 result.Append(Consume());
             }
 
-            if (Peek() != quoteChar)
+            if (IsAtEnd() || Peek() != quoteChar)
                 throw new InvalidOperationException($"Missing closing quote! starting at {start}\n{_input.Substring(start)}");
 
-            result.Append(Consume()); // Consume closing quote
-
+            result.Append(Consume());
             return result.ToString();
         }
 
@@ -74,7 +93,6 @@ namespace SQLQueryBuilder.Builder
             var result = new StringBuilder();
             var depth = 0;
 
-            // Consume the initial opening parenthesis
             depth++;
             result.Append(Consume());
 
@@ -99,6 +117,11 @@ namespace SQLQueryBuilder.Builder
                 {
                     result.Append(ParseCase());
                 }
+                else if (c == ',')
+                {
+                    // SAFE GUARD: Inner function commas must NOT trigger a column split!
+                    result.Append(Consume());
+                }
                 else
                 {
                     result.Append(Consume());
@@ -113,52 +136,56 @@ namespace SQLQueryBuilder.Builder
 
         private string ParseCase()
         {
-            if (CASECheck())
+            if (!CASECheck())
+                throw new InvalidOperationException($"Expected CASE but got {Peek()} instead! at index:{_index}");
+
+            var start = _index;
+            var result = new StringBuilder();
+
+            result.Append(Consume()); // C
+            result.Append(Consume()); // A
+            result.Append(Consume()); // S
+            result.Append(Consume()); // E
+
+            while (!IsAtEnd() && !ENDCheck())
             {
-                var start = _index;
-                var result = new StringBuilder();
-
-                result.Append(Consume()); // C
-                result.Append(Consume()); // A
-                result.Append(Consume()); // S
-                result.Append(Consume()); // E
-
-                while (!IsAtEnd() && !ENDCheck())
+                char c = Peek();
+                if (c == '(')
                 {
-                    char c = Peek();
-                    if (c == '(')
-                    {
-                        result.Append(ParseParenthesis());
-                    }
-                    else if (c == '"' || c == '\'')
-                    {
-                        result.Append(ParseQuote());
-                    }
-                    else if (CASECheck())
-                    {
-                        result.Append(ParseCase());
-                    }
-                    else
-                    {
-                        result.Append(Consume());
-                    }
+                    result.Append(ParseParenthesis());
                 }
-
-                if (IsAtEnd())
-                    throw new InvalidOperationException($"Missing closing CASE earlier with END! starting from {start}\n{_input.Substring(start)}");
-
-                result.Append(Consume()); // E
-                result.Append(Consume()); // N
-                result.Append(Consume()); // D
-
-                return result.ToString();
+                else if (c == '"' || c == '\'')
+                {
+                    result.Append(ParseQuote());
+                }
+                else if (CASECheck())
+                {
+                    result.Append(ParseCase());
+                }
+                else if (c == ',')
+                {
+                    // SAFE GUARD: Commas inside a CASE statement belong to the expression!
+                    result.Append(Consume());
+                }
+                else
+                {
+                    result.Append(Consume());
+                }
             }
-            throw new InvalidOperationException($"Expected CASE but got {Peek()} instead! at index:{_index}");
+
+            if (IsAtEnd())
+                throw new InvalidOperationException($"Missing closing CASE with END! starting from {start}\n{_input.Substring(start)}");
+
+            result.Append(Consume()); // E
+            result.Append(Consume()); // N
+            result.Append(Consume()); // D
+
+            return result.ToString();
         }
 
         private void Init(string input)
         {
-            _input = input;
+            _input = input ?? string.Empty;
             _index = 0;
             _columns = new List<ColumnMetadataModel>();
         }
@@ -188,134 +215,116 @@ namespace SQLQueryBuilder.Builder
             }
             return false;
         }
-
         private void ProcessAndAdd(string rawChunk)
         {
             string trimmed = Regex.Replace(rawChunk.Trim(), @"\s+", " ");
             if (string.IsNullOrEmpty(trimmed)) return;
 
-            // If it ends with a parenthesis, it's a function call with NO alias
-            if (trimmed.EndsWith(')'))
+            // 1. EXTRACT THE ALIAS FIRST (Handles trailing quotes, brackets, or plain words)
+            string expression = trimmed;
+            string? alias = null;
+
+            var i = trimmed.Length - 1;
+            var lastChar = trimmed[trimmed.Length-1];
+            var notLetter = !char.IsLetter(lastChar);
+            //Getting the Index split for alias
+            if (notLetter) // alias with bracket or quote
             {
-                var columnData = new ColumnMetadataModel()
-                {
-                    OriginalQuery = trimmed,
-                    TableAlias = null,
-                    ColumnName = trimmed,
-                    Alias = null,
-                    IsExpression = true
-                };
-
-                _columns.Add(columnData);
-                return;
-            }
-
-            int i = trimmed.Length - 1;
-            char lastChar = trimmed[i];
-
-            // Case 1: The alias is wrapped in quotes or brackets
-            if (lastChar == '"' || lastChar == '\'' || lastChar == ']' || lastChar == '`')
-            {
-                char targetOpen = lastChar == ']' ? '[' : lastChar;
-                i--; // Skip past the closing boundary marker
-
-                // Loop backward exclusively to find the matching opening wrapper character
-                while (i >= 0 && trimmed[i] != targetOpen)
+                i--; // skip 1 character so its skip opening quote
+                var targetChar = lastChar == ']' ? '[' : lastChar;
+                while (i >= 0 && trimmed[i] != targetChar)
                 {
                     i--;
                 }
-
-                // 'i' now points directly to the opening quote character ('"', '\'', or '[')
-                string alias = trimmed.Substring(i).Trim();
-                string expression = trimmed.Substring(0, i).TrimEnd();
-
-                // Strip off the optional "AS" keyword if present
-                if (expression.EndsWith(" AS", StringComparison.OrdinalIgnoreCase))
+            }
+            else // non quoted or bracketed alias
+            {
+                while (i >= 0 && trimmed[i] != ' ')
                 {
-                    expression = expression.Substring(0, expression.Length - 3).TrimEnd();
+                    i--;
                 }
-
-                // Clean up structural quotes for the output representation
-                string cleanAlias = alias.Substring(1, alias.Length - 2);
+            }
+            
+            if(i != -1)
+            {
+                expression = trimmed.Substring(0, i).Trim();
                 
-                var columnData = new ColumnMetadataModel()
+                if (expression.EndsWith(" AS", StringComparison.InvariantCultureIgnoreCase))
                 {
-                    OriginalQuery = trimmed,
-                    TableAlias = null,
-                    ColumnName = expression,
-                    Alias = cleanAlias,
-                    IsExpression = true
-                };
-
-                _columns.Add(columnData);
-                return;
-            }
-
-            // Case 2: Standard, plain alias without spaces (e.g., total_orders)
-            // Just track backward until you hit the space boundary separating column from alias
-            while (i >= 0 && trimmed[i] != ' ')
-            {
-                i--;
-            }
-
-            if (i != -1)
-            {
-                string alias = trimmed.Substring(i + 1).Trim();
-                string expression = trimmed.Substring(0, i).TrimEnd();
-                // check if the left-side expression contains parentheses or math.
-                // If it doesn't, it's a plain column with an alias (e.g., "c.first_name alias")
-                bool isExpr = expression.Contains('(') || expression.Contains(')') || expression.Contains('+');
-
-                if (expression.EndsWith(" AS", StringComparison.OrdinalIgnoreCase))
-                {
-                    expression = expression.Substring(0, expression.Length - 3).TrimEnd();
+                    expression = expression.Substring(0, expression.Length - 3).Trim();
                 }
 
-                string? tableAlias = null;
-                string columnName = expression; //clean expression
+                if (notLetter)
+                {
+                    alias = trimmed.Substring(i+1, trimmed.Length - i-2).Trim();
+                }
+                else
+                {
+                    alias = trimmed.Substring(i, trimmed.Length - i).Trim();
+                }
+            } 
 
-                if (!isExpr && expression.Contains('.'))
+            // 2. FLAG EXPRESSIONS UPFRONT
+            // If the left side has spaces, keywords, or math operators, it's 100% an expression.
+            bool isStringLiteral =
+                expression.Length >= 2 &&
+                expression.StartsWith('\'') &&
+                expression.EndsWith('\'');
+
+            bool isExpr = !IsSimpleColumnReference(expression);
+
+            string? tableAlias = null;
+            string columnName = expression;
+
+            // 3. ROUTE LOGIC BASED ON THE FLAG
+            if (!isExpr)
+            {
+                // Now it's perfectly safe to split on a dot because we KNOW it's a plain column!
+                if (expression.Contains('.'))
                 {
                     var parts = expression.Split('.');
                     tableAlias = parts[0];
                     columnName = parts[1];
                 }
-
-                var columnData = new ColumnMetadataModel()
-                {
-                    OriginalQuery = trimmed,
-                    TableAlias = isExpr ? null : tableAlias,
-                    ColumnName = columnName,
-                    Alias = alias,
-                    IsExpression = isExpr
-                };
-
-                _columns.Add(columnData);
             }
             else
             {
-                // No space found at all, it's just a raw target column like "usr.user_id"
-                string? tableAlias = null;
-                string columnName = trimmed;
-
-                if (trimmed.Contains('.'))
-                {
-                    var parts = trimmed.Split('.');
-                    tableAlias = parts[0];
-                    columnName = parts[1];
-                }
-
-                var columnData = new ColumnMetadataModel()
-                {
-                    OriginalQuery = trimmed,
-                    TableAlias = tableAlias,
-                    ColumnName = columnName,
-                    Alias = null,
-                    IsExpression = false
-                };
-
-                _columns.Add(columnData);
+                // For expressions, the "ColumnName" is just the entire formula/statement
+                tableAlias = null;
+                columnName = expression;
             }
+
+            // 4. ADD TO METADATA
+            _columns.Add(new ColumnMetadataModel()
+            {
+                OriginalQuery = trimmed,
+                TableAlias = tableAlias,
+                ColumnName = columnName,
+                Alias = alias,
+                IsExpression = isExpr
+            });
+        }
+        private bool IsSimpleColumnReference(string expr)
+        {
+            expr = expr.Trim();
+
+            // table.column
+            if (Regex.IsMatch(expr, @"^[A-Za-z_]\w*\.[A-Za-z_]\w*$"))
+                return true;
+
+            // [table].[column]
+            if (Regex.IsMatch(expr, @"^\[[^\]]+\]\.\[[^\]]+\]$"))
+                return true;
+
+            // column
+            if (Regex.IsMatch(expr, @"^[A-Za-z_]\w*$"))
+                return true;
+
+            // [column]
+            if (Regex.IsMatch(expr, @"^\[[^\]]+\]$"))
+                return true;
+
+            return false;
         }
     }
 }
