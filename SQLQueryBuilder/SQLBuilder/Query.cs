@@ -223,7 +223,7 @@ namespace SQLQueryBuilder.Builder
                 {
                     // Sanitizes literal code variables to neutralize threat vectors like SQL injection
                     var param = $"@p{index++}";
-                    var column = _sqlInfo.ValidateColumnOrAlias(comparison.Identifier.Trim());
+                    var column = _sqlInfo.ValidateResultProperty(comparison.Identifier.Trim());
                     var op = NormalizeOperator(comparison.Op);
                     var value = FormatValue(comparison.Op, comparison.Value);
 

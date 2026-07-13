@@ -42,7 +42,7 @@ namespace SQLQueryBuilder.Model
         public string OrderBy
         {
             get => _orderBy;
-            set => _orderBy = string.IsNullOrWhiteSpace(value) ? string.Empty : ValidateColumnOrAlias(value.Trim());
+            set => _orderBy = string.IsNullOrWhiteSpace(value) ? string.Empty : ValidateResultProperty(value.Trim());
         }
         public OrderTypeEnum OrderType { get; set; }
 
@@ -50,7 +50,7 @@ namespace SQLQueryBuilder.Model
         public string GroupBy
         {
             get => _groupBy;
-            set => _groupBy = string.IsNullOrWhiteSpace(value) ? string.Empty : ValidateColumnOrAlias(value.Trim());
+            set => _groupBy = string.IsNullOrWhiteSpace(value) ? string.Empty : ValidateResultProperty(value.Trim());
         }
 
         /// <summary> Parameter state definitions to pass down cleanly into consumer layers like Dapper. </summary>
@@ -77,7 +77,7 @@ namespace SQLQueryBuilder.Model
                     }
                     else
                     {
-                        selected.Alias = ValidateColumnOrAlias(selected.Alias);
+                        selected.Alias = ValidateResultProperty(selected.Alias);
                     }
                 }
                 // --- 2. STANDARD COLUMN PATHWAY ---
@@ -96,11 +96,11 @@ namespace SQLQueryBuilder.Model
                     }
                     if (!string.IsNullOrWhiteSpace(selected.Alias))
                     {
-                        selected.Alias = ValidateColumnOrAlias(selected.Alias);
+                        selected.Alias = ValidateResultProperty(selected.Alias);
                     }
                     else
                     {
-                        selected.ColumnName = ValidateColumnOrAlias(selected.ColumnName);
+                        selected.ColumnName = ValidateResultProperty(selected.ColumnName);
                     }
                 }
             }
@@ -115,7 +115,7 @@ namespace SQLQueryBuilder.Model
                     join.TableAlias = ValidateTableAlias(join.TableAlias);
                 }
 
-                join.ColumnName = ValidateColumnOrAlias(join.ColumnName);
+                join.ColumnName = ValidateResultProperty(join.ColumnName);
             }
         }
 
@@ -133,12 +133,12 @@ namespace SQLQueryBuilder.Model
             return match.Table.Alias;
         }
 
-        public string ValidateColumnOrAlias(string columnName)
+        public string ValidateResultProperty(string columnName)
         {
             foreach (var columnList in _validColumns.Values)
             {
                 var matchedColumn = columnList.FirstOrDefault(c => 
-                    string.Equals(c, columnName, StringComparison.OrdinalIgnoreCase));
+                    string.Equals(c, columnName, StringComparison.InvariantCultureIgnoreCase));
 
                 if (matchedColumn != null) 
                     return matchedColumn;

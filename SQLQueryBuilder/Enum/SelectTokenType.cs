@@ -5,12 +5,13 @@
         // Special
         EOF,
         Unknown,
-
-        // Identifiers & literals
-        Identifier,
-        Keyword,
+        //literals
         Number,
         String,
+
+        // Identifiers
+        Identifier,
+        Keyword,
 
         // Quoted identifiers
         BracketIdentifier,   // [Column]

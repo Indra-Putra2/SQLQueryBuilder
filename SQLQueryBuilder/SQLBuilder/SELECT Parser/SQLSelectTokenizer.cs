@@ -1,6 +1,7 @@
 ﻿using SQLQueryBuilder.Enum;
 using SQLQueryBuilder.Model;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace SQLQueryBuilder.SQLBuilder.SELECT_Parser
 {
@@ -9,7 +10,35 @@ namespace SQLQueryBuilder.SQLBuilder.SELECT_Parser
         private List<SelectToken> _tokens;
         private string _sql = string.Empty;
         private int _index = 0;
+        private static readonly HashSet<string> _sqlKeywords = new(StringComparer.OrdinalIgnoreCase)
+        {
+            // Core
+            "SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE",
 
+            // Clauses
+            "INTO", "VALUES", "SET",
+
+            // Joins
+            "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "OUTER", "ON",
+
+            // Logic
+            "AND", "OR", "NOT", "IN", "EXISTS", "BETWEEN", "LIKE", "IS", "NULL",
+
+            // Sorting / grouping
+            "ORDER", "BY", "GROUP", "HAVING", "DISTINCT",
+
+            // Aliasing / flow
+            "AS",
+
+            // Control flow
+            "CASE", "WHEN", "THEN", "ELSE", "END",
+
+            // Schema
+            "CREATE", "ALTER", "DROP", "TABLE", "VIEW", "INDEX",
+
+            // Extras
+            "LIMIT", "OFFSET"
+        };
         private char Current =>
             _index < _sql.Length
                 ? _sql[_index]
@@ -27,8 +56,10 @@ namespace SQLQueryBuilder.SQLBuilder.SELECT_Parser
 
         public List<SelectToken> Parse(string Select)
         {
+            if(string.IsNullOrWhiteSpace(Select)) throw new ArgumentNullException("Select cannot be NULL or empty!");
+
             _tokens = new();
-            _sql = Select;
+            _sql = Regex.Replace(Select, @"\s+|\n", " ");
             _index = 0;
 
             while (Current != '\0')
@@ -185,14 +216,12 @@ namespace SQLQueryBuilder.SQLBuilder.SELECT_Parser
         {
             var sb = new StringBuilder();
             int startIndex = _index;
-            Consume(); // Consume the opening single quote '\''
+            sb.Append(Consume()); // Consume the opening single quote '\''
 
             while (Current != '\0')
             {
-                // If we hit a single quote, check if it's an escaped pair
                 if (Current == '\'')
                 {
-                    // Look ahead: is the next character also a single quote?
                     if (Peek() == '\'')
                     {
                         sb.Append('\''); // Add a single literal quote to the string value
@@ -201,8 +230,7 @@ namespace SQLQueryBuilder.SQLBuilder.SELECT_Parser
                         continue;
                     }
 
-                    // It's a single closing quote -> We reached the end of the string literal!
-                    Consume(); // Consume the closing quote
+                    sb.Append(Consume()); // Consume the closing quote
                     int totalLength = _index - startIndex;
                     AddToken(SelectTokenType.String, sb.ToString(), startIndex, totalLength);
                     return; // Exit the method completely
@@ -219,7 +247,7 @@ namespace SQLQueryBuilder.SQLBuilder.SELECT_Parser
         {
             var sb = new StringBuilder();
             int startIndex = _index;
-            Consume(); // Consume opening bracket/quote
+            sb.Append(Consume()); // Consume opening bracket/quote
 
             while (Current != '\0')
             {
@@ -236,7 +264,7 @@ namespace SQLQueryBuilder.SQLBuilder.SELECT_Parser
                     }
 
                     // If it's NOT doubled up, we found the true end!
-                    Consume(); // Consume the final closing character
+                    sb.Append(Consume()); // Consume the final closing character
                     int totalLength = _index - startIndex;
                     AddToken(tokenType, sb.ToString(), startIndex, totalLength);
                     return;
@@ -280,7 +308,18 @@ namespace SQLQueryBuilder.SQLBuilder.SELECT_Parser
                 sb.Append(Consume());
             }
 
-            AddToken(SelectTokenType.Identifier, sb.ToString(), start, sb.ToString().Length);
+            var value = sb.ToString();
+            var lower = value.ToLowerInvariant();
+            bool isSqlKeyword = _sqlKeywords.Contains(lower);
+
+            if (isSqlKeyword)
+            {
+                AddToken(SelectTokenType.Keyword, sb.ToString(), start, sb.ToString().Length);
+            }
+            else
+            {
+                AddToken(SelectTokenType.Identifier, sb.ToString(), start, sb.ToString().Length);
+            }
         }
 
         private void AddToken(SelectTokenType type, string value, int start, int length)
