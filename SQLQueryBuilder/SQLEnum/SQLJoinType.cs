@@ -1,6 +1,6 @@
-﻿namespace SQLQueryBuilder.Enum
+﻿namespace SQLQueryBuilder.SQLEnum
 {
-    public enum JoinTypeEnum
+    public enum SQLJoinType
     {
         INNER,
         LEFT,
