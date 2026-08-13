@@ -1,8 +1,7 @@
-﻿using SQLQueryBuilder.SQLEnum;
-using SQLQueryBuilder.Model;
+﻿using SQLQueryBuilder.Model;
+using SQLQueryBuilder.SQLEnum;
 using System.Text;
 using System.Text.RegularExpressions;
-using System;
 
 namespace SQLQueryBuilder.Builder.SQLParser
 {
@@ -23,6 +22,16 @@ namespace SQLQueryBuilder.Builder.SQLParser
             [SQLTokenType.LessThanOrEqual] = SQLBinaryOperator.LessThanOrEqual,
             [SQLTokenType.GreaterThan] = SQLBinaryOperator.GreaterThan,
             [SQLTokenType.GreaterThanOrEqual] = SQLBinaryOperator.GreaterThanOrEqual,
+        };
+        public static readonly Dictionary<string, SQLFunctionType> SQLTypes =
+        new(StringComparer.InvariantCultureIgnoreCase)
+        {
+            ["NUMBER"] = SQLFunctionType.Number,
+            ["STRING"] = SQLFunctionType.String,
+            ["BOOL"] = SQLFunctionType.Boolean,
+            ["GUID"] = SQLFunctionType.Guid,
+            ["DATETIME"] = SQLFunctionType.DateTime,
+            ["BINARY"] = SQLFunctionType.Binary,
         };
         public Dictionary<string, SQLUnaryOperator> UnaryOperators =
         new()
@@ -57,6 +66,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             ..Number,
             SQLTokenType.StringLiteral,
             SQLTokenType.UnicodeString,
+            SQLTokenType.DatetimeLiteral,
             SQLTokenType.HexLiteral,
             SQLTokenType.MoneyLiteral,
             SQLTokenType.NullLiteral
@@ -115,6 +125,11 @@ namespace SQLQueryBuilder.Builder.SQLParser
         [
             ..Identifiers,
             SQLTokenType.StringLiteral,
+        ];
+        public static readonly HashSet<SQLTokenType> AllowedFunctionType =
+        [
+            SQLTokenType.NullLiteral,
+            SQLTokenType.SQLType,
         ];
 
         //Methods

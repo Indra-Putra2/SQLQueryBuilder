@@ -1,14 +1,14 @@
 ﻿namespace SQLQueryBuilder.SQLEnum
 {
-    public enum SQLValueType
+    public enum SQLFunctionType
     {
         Unknown,
-        NullLiteral,
-        Boolean,
         Number,
         String,
+        Boolean,
         DateTime,
+        Binary,
         Guid,
-        Binary
+        Null,
     }
 }

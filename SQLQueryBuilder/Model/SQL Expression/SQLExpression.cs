@@ -29,11 +29,12 @@ namespace SQLQueryBuilder.Model.SQL_Expression
     {
         public string Name { get; init; } = string.Empty;
         public List<SQLExpression> Arguments { get; init; } = new();
+        public SQLFunctionType FunctionType { get; init; } = SQLFunctionType.Unknown;
     }
     public sealed class CaseExpression : SQLExpression
     {
+        public SQLExpression? BaseExpression { get; init; }
         public List<CaseWhen> Conditions { get; init; } = new();
-
         public SQLExpression? ElseExpression { get; init; }
     }
     public sealed class CaseWhen
@@ -43,7 +44,7 @@ namespace SQLQueryBuilder.Model.SQL_Expression
     }
     public sealed class WildcardExpression : SQLExpression
     {
-        public string? TableAlias { get; init; }
+        public List<string>? TableAlias { get; init; }
     }
     public sealed class IsNullExpression : SQLExpression
     {
@@ -81,7 +82,6 @@ namespace SQLQueryBuilder.Model.SQL_Expression
     public sealed class OrderByExpression : SQLExpression
     {
         public SQLExpression Expression { get; init; }
-
         public bool Descending { get; init; }
     }
 }

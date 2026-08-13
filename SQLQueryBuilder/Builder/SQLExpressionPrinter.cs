@@ -82,7 +82,7 @@ namespace SQLQueryBuilder.Utils
                     break;
 
                 case WildcardExpression wild:
-                    string prefix = string.IsNullOrEmpty(wild.TableAlias) ? "" : $"{wild.TableAlias}.";
+                    string prefix = wild.TableAlias == null ? "" : $"{wild.TableAlias}.";
                     sb.AppendLine($"{indent}{marker}WildcardExpression: {prefix}*");
                     break;
 

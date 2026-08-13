@@ -1,10 +1,7 @@
 ﻿using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
-using System;
-using System.Collections.Generic;
 using System.Data;
-using System.Text;
 
 namespace SQLQueryBuilder.Builder.SQLParser
 {
@@ -58,6 +55,8 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 {
                     _helper.Consume();
                 }
+
+                orderBy.Add(new OrderByExpression { Expression = expr, Descending = desc });
             }
 
             if (!_helper.Expect(_helper.Current, SQLTokenType.EOF))

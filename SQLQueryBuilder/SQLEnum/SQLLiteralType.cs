@@ -8,6 +8,7 @@
         String,
         UnicodeString,
         BinaryLiteral,
+        Datetime,
         Money,
         Null
     }

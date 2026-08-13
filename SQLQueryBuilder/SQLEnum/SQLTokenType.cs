@@ -7,7 +7,7 @@
         Unknown,
 
         // Literals
-        BooleanLiteral,       // 1/0
+        DatetimeLiteral,      // D'2020-05-01'
         IntegerLiteral,       // 123, -456
         DecimalLiteral,       // 123.45
         ScientificLiteral,    // 1.5E10
@@ -58,11 +58,14 @@
         GreaterThan,          // >
         GreaterThanOrEqual,   // >=
 
-        // Compound Assignment Operators (Optional for procedural T-SQL)
+        // Compound Assignment Operators
         PlusEquals,           // +=
         MinusEquals,          // -=
         MultiplyEquals,       // *=
         DivideEquals,         // /=
-        ModuloEquals          // %=
+        ModuloEquals,         // %=
+
+        // Custom Syntax
+        SQLType          // NUMBER, STRING, NULL etc
     }
 }

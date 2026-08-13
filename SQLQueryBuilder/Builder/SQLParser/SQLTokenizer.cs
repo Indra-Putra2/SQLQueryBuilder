@@ -21,7 +21,16 @@ namespace SQLQueryBuilder.Builder.SQLParser
             "CASE", "WHEN", "THEN", "ELSE", "END",
             "CREATE", "ALTER", "DROP", "TABLE", "VIEW", "INDEX",
             "LIMIT", "OFFSET", "DEFAULT",
-            "ASC", "DESC"
+            "ASC", "DESC",
+            "TYPE",
+        };
+
+        private static readonly HashSet<string> _sqlDataTypes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "NUMBER", "STRING", "BOOL",
+            "DATETIME",
+            "BINARY",
+            "GUID"
         };
 
         private char Current => _index < _input.Length ? _input[_index] : '\0';
@@ -42,14 +51,14 @@ namespace SQLQueryBuilder.Builder.SQLParser
             {
                 var c = Current;
 
-                // 1. Skip Whitespace
+                // Skip Whitespace
                 if (char.IsWhiteSpace(c))
                 {
                     Consume();
                     continue;
                 }
 
-                // 2. Comments (-- or /* */)
+                // Comments (-- or /* */)
                 if (c == '-' && Peek() == '-')
                 {
                     SkipSingleLineComment();
@@ -61,7 +70,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     continue;
                 }
 
-                // 3. Numbers & Hex Literals
+                // Numbers & Hex Literals
                 if (char.IsDigit(c) || (c == '.' && char.IsDigit(Peek())))
                 {
                     if (c == '0' && (Peek() == 'x' || Peek() == 'X'))
@@ -86,22 +95,27 @@ namespace SQLQueryBuilder.Builder.SQLParser
                         }
                     }
                 }
-                // 4. Unicode Strings (e.g. N'text')
+                // Unicode Strings (e.g. N'text')
                 else if ((c == 'N' || c == 'n') && Peek() == '\'')
                 {
                     AddToken(SQLTokenType.UnicodeString, ParseUnicode);
                 }
-                // 5. Variables (@var or @@var)
+                // Datetime Literals (e.g. d'2020-07-01')
+                else if ((c == 'D' || c == 'd') && Peek() == '\'')
+                {
+                    AddToken(SQLTokenType.DatetimeLiteral, ParseDatetime);
+                }
+                // Variables (@var or @@var)
                 else if (c == '@')
                 {
                     AddToken(SQLTokenType.Variable, ParseVariable);
                 }
-                // 6. Money Literals ($100)
+                // Money Literals ($100)
                 else if (c == '$' && char.IsDigit(Peek()))
                 {
                     AddToken(SQLTokenType.MoneyLiteral, ParseMoney);
                 }
-                // 7. Regular Identifiers OR Keywords OR NULL
+                // Regular Identifiers OR Keywords OR NULL
                 else if (char.IsLetter(c) || c == '_')
                 {
                     var start = _index;
@@ -114,17 +128,19 @@ namespace SQLQueryBuilder.Builder.SQLParser
                         type = SQLTokenType.StringLiteral;
                     else if (_sqlKeywords.Contains(iden.clean))
                         type = SQLTokenType.Keyword;
+                    else if (_sqlDataTypes.Contains(iden.clean))
+                        type = SQLTokenType.SQLType;
                     else
                         type = SQLTokenType.Identifier;
 
                     _tokens.Add(new SQLToken(type, iden.raw, iden.clean, start, iden.raw.Length, iden.clean.Length));
                 }
-                // 8. Quoted Identifiers
+                // Quoted Identifiers
                 else if (c == '[') AddToken(SQLTokenType.BracketIdentifier, () => ParseQuotedIdentifier(']'));
                 else if (c == '"') AddToken(SQLTokenType.DoubleQuoteIdentifier, () => ParseQuotedIdentifier('"'));
-                // 9. Standard Strings
+                // Standard Strings
                 else if (c == '\'') AddToken(SQLTokenType.StringLiteral, ParseString);
-                // 10. Single-Character Operators & Punctuation
+                // Single-Character Operators & Punctuation
                 else if (c == '.') AddToken(SQLTokenType.Dot, () => Consume().ToString());
                 else if (c == ',') AddToken(SQLTokenType.Comma, () => Consume().ToString());
                 else if (c == ';') AddToken(SQLTokenType.Semicolon, () => Consume().ToString());
@@ -132,7 +148,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 else if (c == ')') AddToken(SQLTokenType.RightParen, () => Consume().ToString());
                 else if (c == '=') AddToken(SQLTokenType.Equal, () => Consume().ToString());
 
-                // 11. Multi-Character Operators & Punctuation & Bitwise
+                // Multi-Character Operators & Punctuation & Bitwise
                 else if (c == ':')
                 {
                     if(Peek() == ':') AddToken(SQLTokenType.ScopeResolution, () => $"{Consume()}{Consume()}");
@@ -183,7 +199,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     else AddToken(SQLTokenType.Unknown, () => Consume().ToString());
                 }
 
-                // 12. Bitwise Operator
+                // Bitwise Operator
                 else if (c == '~') AddToken(SQLTokenType.BitwiseNot, () => Consume().ToString());
                 else if (c == '&') AddToken(SQLTokenType.BitwiseAnd, () => Consume().ToString());
                 else if (c == '|') AddToken(SQLTokenType.BitwiseOr, () => Consume().ToString());
@@ -258,6 +274,16 @@ namespace SQLQueryBuilder.Builder.SQLParser
             var clean = new StringBuilder();
             var raw = new StringBuilder();
             raw.Append(Consume()); // Consume N/n
+            var str = ParseString();
+            raw.Append(str.raw);
+            clean.Append(str.clean);
+            return (raw.ToString(), clean.ToString());
+        }
+        private (string raw, string clean) ParseDatetime()
+        {
+            var clean = new StringBuilder();
+            var raw = new StringBuilder();
+            raw.Append(Consume()); // Consume D/d
             var str = ParseString();
             raw.Append(str.raw);
             clean.Append(str.clean);

@@ -10,7 +10,15 @@ namespace SQLQueryBuilder.Builder.SQLParser
     public class SQLSemanticValidator
     {
         private Dictionary<string, Type> _aliases = new(StringComparer.InvariantCultureIgnoreCase);
-        private SQLFunctionDefinition _sQLFunction = new();
+        private SQLFunctionDefinition _sQLFunctionDefinitions = new SQLFunctionDefinition();
+        private SQLValidationMode _mode;
+
+        public SQLSemanticValidator(SQLValidationMode mode)
+        {
+            _mode = mode;
+        }
+
+        #region Validation
         public void ValidateQuery(SQLQuery query)
         {
             ValidateBaseQuery(query);
@@ -26,10 +34,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
         public void ValidateFilter(SQLQuery query)
         {
-            ValidateHaving(query.Having);
-            ValidateWhere(query.Where);
-            ValidateGroupBy(query.GroupBy);
-            ValidateOrderBy(query.OrderBy);
+            //ValidateHaving(query.Having);
+            //ValidateWhere(query.Where);
+            //ValidateGroupBy(query.GroupBy);
+            //ValidateOrderBy(query.OrderBy);
         }
 
 
@@ -42,6 +50,13 @@ namespace SQLQueryBuilder.Builder.SQLParser
             }
 
             AddAlias(from.Alias, from.Type);
+        }
+        private void ValidateSelect(List<SelectExpression> select)
+        {
+            foreach (var selected in select)
+            {
+                AnalyzeExpression(selected);
+            }
         }
 
         private void ValidateJoins(List<JoinSource> joins)
@@ -83,247 +98,402 @@ namespace SQLQueryBuilder.Builder.SQLParser
         {
             throw new NotImplementedException();
         }
+        #endregion
 
-        private void ValidateSelect(object select)
-        {
-            throw new NotImplementedException();
-        }
-
-        private ExpressionMetadata AnalyzeExpression(SQLExpression expression)
+        #region Analyzer
+        private SQLExpressionMetadata AnalyzeExpression(SQLExpression expression)
         {
             return expression switch
             {
                 SelectExpression select => AnalyzeExpression(select.Expression),
                 OrderByExpression orderBy => AnalyzeExpression(orderBy.Expression),
 
-                BinaryExpression binary => AnalyzeBinary(
-                    AnalyzeExpression(binary.Left),
-                    binary.Operator,
-                    AnalyzeExpression(binary.Right)),
-
+                BinaryExpression binary => AnalyzeBinary(binary),
                 UnaryExpression unary => AnalyzeUnary(unary),
 
-                FunctionExpression function => AnalyzeFunction(function),
-                ColumnExpression column => AnalyzeColumn(column),
-                LiteralExpression literal => AnalyzeLiteral(literal),
-                WildcardExpression wildcard => AnalyzeWildcard(wildcard),
-
-                CaseExpression @case => AnalyzeCase(@case),
                 LikeExpression like => AnalyzeLike(like),
                 InExpression @in => AnalyzeIn(@in),
                 BetweenExpression between => AnalyzeBetween(between),
                 IsNullExpression isnull => AnalyzeIsNull(isnull),
 
-                _ => throw new NotSupportedException(
-                    $"Expression '{expression.GetType().Name}' is not supported.")
+                //Primary
+                WildcardExpression wildcard => AnalyzeWildcard(wildcard),
+                FunctionExpression function => AnalyzeFunction(function),
+                ColumnExpression column => AnalyzeColumn(column),
+                LiteralExpression literal => AnalyzeLiteral(literal),
+                CaseExpression @case => AnalyzeCase(@case),
+
+                _ => throw new NotSupportedException($"Expression '{expression.GetType().Name}' is not supported.")
             };
         }
-        private ExpressionMetadata AnalyzeFunction(FunctionExpression function)
+        private SQLExpressionMetadata AnalyzeFunction(FunctionExpression function)
         {
-            var args = function.Arguments
-                .Select(AnalyzeExpression)
-                .ToList();
+            var returnType = _sQLFunctionDefinitions.GetFunctionExpressionType(function, _mode);
 
-            if (_sQLFunction.Functions.TryGetValue(function.Name, out var definition))
-                return definition.Analyzer(args);
-
-            return new ExpressionMetadata
+            if (returnType.type == SQLExpressionType.NullLiteral)
             {
-                Type = SQLValueType.Unknown,
-                IsNullable = true,
-                IsConstant = args.All(x => x.IsConstant)
+                return new SQLExpressionMetadata
+                {
+                    Type = SQLExpressionType.NullLiteral,
+                    IsNullable = true,
+                    IsConstant = true,
+                };
+            }
+
+            bool isNullable = returnType.rule switch
+            {
+                SQLNullabilityRule.Propagate => false,
+                SQLNullabilityRule.AllNullable => true,
+                SQLNullabilityRule.Never => false,
+                _ => throw new ArgumentOutOfRangeException()
+            };
+
+            bool isConstant = true;
+
+            foreach (var arg in function.Arguments)
+            {
+                var metadata = AnalyzeExpression(arg);
+
+                switch (returnType.rule)
+                {
+                    case SQLNullabilityRule.Propagate:
+                        isNullable |= metadata.IsNullable;
+                        break;
+
+                    case SQLNullabilityRule.AllNullable:
+                        isNullable &= metadata.IsNullable;
+                        break;
+
+                    case SQLNullabilityRule.Never:
+                        break;
+                }
+
+                isConstant &= metadata.IsConstant;
+            }
+
+            return new SQLExpressionMetadata
+            {
+                Type = returnType.type,
+                IsNullable = isNullable,
+                IsConstant = isConstant,
             };
         }
-        private ExpressionMetadata AnalyzeUnary(UnaryExpression unary)
+        private SQLExpressionMetadata AnalyzeUnary(UnaryExpression unary)
         {
             var operand = AnalyzeExpression(unary.Operand);
 
-            return unary.Operator switch
+            // 1. Early Null Propagation
+            if (operand.Type == SQLExpressionType.NullLiteral)
             {
-                SQLUnaryOperator.Positive or SQLUnaryOperator.Negative
-                    when operand.Type == SQLValueType.Number
-                    => new ExpressionMetadata
-                    {
-                        Type = SQLValueType.Number,
-                        IsNullable = operand.IsNullable,
-                        IsConstant = operand.IsConstant
-                    },
+                return operand;
+            }
 
-                SQLUnaryOperator.NOT
-                    when operand.Type == SQLValueType.Boolean
-                    => new ExpressionMetadata
+            switch (unary.Operator)
+            {
+                case SQLUnaryOperator.Positive:
+                case SQLUnaryOperator.Negative:
+                    // CRASH: If we are strict and don't know the type, 
+                    // OR if we do know it and it's completely wrong (not a number).
+                    if ((_mode == SQLValidationMode.Strict && operand.Type == SQLExpressionType.Unknown) ||
+                        (operand.Type != SQLExpressionType.Number && operand.Type != SQLExpressionType.Unknown))
                     {
-                        Type = SQLValueType.Boolean,
-                        IsNullable = operand.IsNullable,
-                        IsConstant = operand.IsConstant
-                    },
+                        throw new SyntaxErrorException($"Unary operator '{unary.Operator}' cannot be applied to type {operand.Type}.");
+                    }
 
-                SQLUnaryOperator.BitwiseNOT
-                    when operand.Type == SQLValueType.Number
-                    => new ExpressionMetadata
+                    // LENIENT MODE INFERENCE: If it was Unknown, it *must* behave like a Number here.
+                    if (operand.Type == SQLExpressionType.Unknown)
                     {
-                        Type = SQLValueType.Number,
-                        IsNullable = operand.IsNullable,
-                        IsConstant = operand.IsConstant
-                    },
+                        return operand with { Type = SQLExpressionType.Number };
+                    }
+                    return operand;
 
-                _ => throw new SyntaxErrorException(
-                    $"Unary operator '{unary.Operator}' cannot be applied to {operand.Type}.")
-            };
+                case SQLUnaryOperator.NOT:
+                    // CRASH: Same rules apply for booleans.
+                    if ((_mode == SQLValidationMode.Strict && operand.Type == SQLExpressionType.Unknown) ||
+                        (operand.Type != SQLExpressionType.Boolean && operand.Type != SQLExpressionType.Unknown))
+                    {
+                        throw new SyntaxErrorException($"Logical NOT operator cannot be applied to type {operand.Type}.");
+                    }
+
+                    // BOTH MODES: Whether it was Boolean or Unknown, the output of NOT is always a Boolean.
+                    return operand with { Type = SQLExpressionType.Boolean };
+
+                default:
+                    throw new SyntaxErrorException($"Unsupported unary operator '{unary.Operator}'.");
+            }
         }
-        private ExpressionMetadata AnalyzeIsNull(IsNullExpression isn)
+        private SQLExpressionMetadata AnalyzeIsNull(IsNullExpression isn)
         {
-            var operand = AnalyzeExpression(isn.Operand);
+            var operandMeta = AnalyzeExpression(isn.Operand);
 
-            return new ExpressionMetadata
+            // Enforce Validation Mode rules for Unknown types
+            if (operandMeta.Type == SQLExpressionType.Unknown && _mode == SQLValidationMode.Strict)
             {
-                Type = SQLValueType.Boolean,
+                throw new SyntaxErrorException("Cannot determine expression type for IS NULL check in Strict mode.");
+            }
+
+            return new SQLExpressionMetadata
+            {
+                // IS NULL always returns true or false, NEVER a third null state itself!
+                Type = SQLExpressionType.Boolean,
                 IsNullable = false,
-                IsConstant = operand.IsConstant
+                IsConstant = operandMeta.IsConstant
             };
         }
-        private ExpressionMetadata AnalyzeBetween(BetweenExpression b)
+        private SQLExpressionMetadata AnalyzeBetween(BetweenExpression b)
         {
-            var operand = AnalyzeExpression(b.Operand);
-            var upper = AnalyzeExpression(b.Upper);
-            var lower = AnalyzeExpression(b.Lower);
+            var targetMeta = AnalyzeExpression(b.Operand);
+            var lowMeta = AnalyzeExpression(b.Lower);
+            var highMeta = AnalyzeExpression(b.Upper);
 
-            // 1. Literal NULL propagation
-            if (operand.Type == SQLValueType.NullLiteral || upper.Type == SQLValueType.NullLiteral || lower.Type == SQLValueType.NullLiteral)
+            // 1. Strict Mode Unknown Check
+            if (_mode == SQLValidationMode.Strict &&
+               (targetMeta.Type == SQLExpressionType.Unknown ||
+                lowMeta.Type == SQLExpressionType.Unknown ||
+                highMeta.Type == SQLExpressionType.Unknown))
             {
-                return new ExpressionMetadata
+                throw new SyntaxErrorException("Cannot determine expression types for BETWEEN operator in Strict mode.");
+            }
+
+            // 2. Type Unification Check: Target, Low, and High must be compatible!
+            // (Ignoring NullLiterals and Unknowns which fit anywhere)
+            SQLExpressionType? knownType = null;
+
+            foreach (var type in new[] { targetMeta.Type, lowMeta.Type, highMeta.Type })
+            {
+                if (type == SQLExpressionType.NullLiteral ||
+                    type == SQLExpressionType.Unknown)
+                    continue;
+
+                if (knownType == null)
                 {
-                    Type = SQLValueType.Boolean,
-                    IsNullable = true,
-                    IsConstant = operand.IsConstant
-                                 && upper.IsConstant
-                                 && lower.IsConstant
+                    knownType = type;
+                    continue;
+                }
+
+                if (knownType != type)
+                {
+                    throw new SyntaxErrorException(
+                        $"Type mismatch in BETWEEN expression. Cannot compare target of type '{targetMeta.Type}' " +
+                        $"against bounds of types '{lowMeta.Type}' and '{highMeta.Type}'.");
+                }
+            }
+            // 3. Propagation Logic
+            bool combinedNullable = targetMeta.IsNullable || lowMeta.IsNullable || highMeta.IsNullable ||
+                                     targetMeta.Type == SQLExpressionType.NullLiteral ||
+                                     lowMeta.Type == SQLExpressionType.NullLiteral ||
+                                     highMeta.Type == SQLExpressionType.NullLiteral;
+
+            bool combinedConstant = targetMeta.IsConstant && lowMeta.IsConstant && highMeta.IsConstant;
+
+            return new SQLExpressionMetadata
+            {
+                Type = SQLExpressionType.Boolean,
+                IsNullable = combinedNullable,
+                IsConstant = combinedConstant
+            };
+
+            bool NullOrUnknown(SQLExpressionType targetMeta) => targetMeta == SQLExpressionType.NullLiteral || targetMeta == SQLExpressionType.Unknown;
+        }
+        private SQLExpressionMetadata AnalyzeIn(InExpression @in)
+        {
+            var targetMeta = AnalyzeExpression(@in.Operand);
+
+            // 1. Strict Mode Unknown Check
+            if (_mode == SQLValidationMode.Strict && targetMeta.Type == SQLExpressionType.Unknown)
+            {
+                throw new SyntaxErrorException("Cannot determine target expression type for IN operator in Strict mode.");
+            }
+
+            // Establish our anchor type if the target is known
+            SQLExpressionType? knownType = (targetMeta.Type != SQLExpressionType.NullLiteral && targetMeta.Type != SQLExpressionType.Unknown)
+                ? targetMeta.Type
+                : null;
+
+            bool itemsAreNullable = false;
+            bool itemsAreConstant = true;
+
+            // 2. Loop through the IN item list
+            foreach (var itemExpr in @in.Values)
+            {
+                var itemMeta = AnalyzeExpression(itemExpr);
+
+                // Track propagation properties
+                if (itemMeta.IsNullable || itemMeta.Type == SQLExpressionType.NullLiteral) itemsAreNullable = true;
+                if (!itemMeta.IsConstant) itemsAreConstant = false;
+
+                if (itemMeta.Type == SQLExpressionType.NullLiteral || itemMeta.Type == SQLExpressionType.Unknown)
+                    continue;
+
+                // If target was unknown but we hit a known item type, lock it in as our benchmark
+                if (knownType == null)
+                {
+                    knownType = itemMeta.Type;
+                    continue;
+                }
+
+                // Catch type conflicts between the target or other items
+                if (knownType != itemMeta.Type)
+                {
+                    throw new SyntaxErrorException(
+                        $"Type mismatch in IN list expression. Found conflicting type '{itemMeta.Type}' " +
+                        $"against expected type '{knownType}'.");
+                }
+            }
+
+            // 3. Final Metadata Unification
+            bool combinedNullable = targetMeta.IsNullable || targetMeta.Type == SQLExpressionType.NullLiteral || itemsAreNullable;
+            bool combinedConstant = targetMeta.IsConstant && itemsAreConstant;
+
+            return new SQLExpressionMetadata
+            {
+                Type = SQLExpressionType.Boolean,
+                IsNullable = combinedNullable,
+                IsConstant = combinedConstant
+            };
+        }
+        private SQLExpressionMetadata AnalyzeLike(LikeExpression like)
+        {
+            var leftMeta = AnalyzeExpression(like.Operand);
+            var rightMeta = AnalyzeExpression(like.Pattern);
+
+            // 1. Strict Mode Unknown Check
+            if (_mode == SQLValidationMode.Strict &&
+               (leftMeta.Type == SQLExpressionType.Unknown || rightMeta.Type == SQLExpressionType.Unknown))
+            {
+                throw new SyntaxErrorException("Cannot determine expression types for LIKE operator in Strict mode.");
+            }
+
+            // 2. Strict Type Constraints (Both sides MUST resolve to String)
+            if (leftMeta.Type != SQLExpressionType.String && leftMeta.Type != SQLExpressionType.NullLiteral && leftMeta.Type != SQLExpressionType.Unknown)
+            {
+                throw new SyntaxErrorException($"The left side of a LIKE expression must be a String, but found '{leftMeta.Type}'.");
+            }
+
+            if (rightMeta.Type != SQLExpressionType.String && rightMeta.Type != SQLExpressionType.NullLiteral && rightMeta.Type != SQLExpressionType.Unknown)
+            {
+                throw new SyntaxErrorException($"The LIKE pattern pattern must be a String, but found '{rightMeta.Type}'.");
+            }
+
+            // 3. Propagation Logic
+            bool combinedNullable = leftMeta.IsNullable || rightMeta.IsNullable ||
+                                     leftMeta.Type == SQLExpressionType.NullLiteral ||
+                                     rightMeta.Type == SQLExpressionType.NullLiteral;
+
+            bool combinedConstant = leftMeta.IsConstant && rightMeta.IsConstant;
+
+            return new SQLExpressionMetadata
+            {
+                Type = SQLExpressionType.Boolean,
+                IsNullable = combinedNullable,
+                IsConstant = combinedConstant
+            };
+        }
+        private SQLExpressionMetadata AnalyzeCase(CaseExpression caseExpr)
+        {
+            SQLExpressionMetadata? baseMeta = caseExpr.BaseExpression != null
+                ? AnalyzeExpression(caseExpr.BaseExpression)
+                : null;
+
+            SQLExpressionType expectedReturnType = SQLExpressionType.Unknown;
+            bool combinedNullable = false;
+            bool combinedConstant = baseMeta?.IsConstant ?? true;
+
+            // If there's no ELSE branch, the result is implicitly nullable!
+            if (caseExpr.ElseExpression == null)
+            {
+                combinedNullable = true;
+            }
+
+            // 1. Validate all WHEN / THEN branches
+            foreach (var branch in caseExpr.Conditions)
+            {
+                var whenMeta = AnalyzeExpression(branch.Condition);
+                var thenMeta = AnalyzeExpression(branch.Result);
+
+                combinedConstant &= whenMeta.IsConstant && thenMeta.IsConstant;
+                combinedNullable |= thenMeta.IsNullable || thenMeta.Type == SQLExpressionType.NullLiteral;
+
+                // Validate the WHEN clause condition
+                if (baseMeta != null)
+                {
+                    // Simple CASE: WHEN type must match Base type (or handle Unknown rules)
+                    if (baseMeta.Type != whenMeta.Type && whenMeta.Type != SQLExpressionType.Unknown && whenMeta.Type != SQLExpressionType.NullLiteral)
+                    {
+                        throw new SyntaxErrorException($"CASE WHEN value type {whenMeta.Type} does not match base expression type {baseMeta.Type}.");
+                    }
+                }
+                else
+                {
+                    // Searched CASE: WHEN must evaluate to a Boolean
+                    if (whenMeta.Type != SQLExpressionType.Boolean && whenMeta.Type != SQLExpressionType.Unknown)
+                    {
+                        throw new SyntaxErrorException($"CASE WHEN condition must evaluate to a Boolean, not {whenMeta.Type}.");
+                    }
+                }
+
+                // Track and unify the THEN return type
+                expectedReturnType = UnifyCaseTypes(expectedReturnType, thenMeta.Type);
+            }
+
+            // 2. Validate the optional ELSE branch
+            if (caseExpr.ElseExpression != null)
+            {
+                var elseMeta = AnalyzeExpression(caseExpr.ElseExpression);
+                combinedConstant &= elseMeta.IsConstant;
+                combinedNullable |= elseMeta.IsNullable || elseMeta.Type == SQLExpressionType.NullLiteral;
+
+                expectedReturnType = UnifyCaseTypes(expectedReturnType, elseMeta.Type);
+            }
+
+            // 3. Enforce Validation Modes on the final unified type
+            if (expectedReturnType == SQLExpressionType.Unknown)
+            {
+                if (_mode == SQLValidationMode.Strict)
+                {
+                    throw new SyntaxErrorException("Cannot determine return type of CASE statement in Strict mode.");
+                }
+                if (_mode == SQLValidationMode.Infer)
+                {
+                    throw new SyntaxErrorException("Cannot determine return type of CASE statement when all branches are Unknown in Infer mode.");
+                }
+            }
+
+            return new SQLExpressionMetadata
+            {
+                Type = expectedReturnType,
+                IsNullable = combinedNullable,
+                IsConstant = combinedConstant
+            };
+
+            SQLExpressionType UnifyCaseTypes(SQLExpressionType current, SQLExpressionType branchType)
+            {
+                return (current, branchType) switch
+                {
+                    // If we don't know the type yet, adopt the branch type (unless it's Null/Unknown)
+                    (SQLExpressionType.Unknown, SQLExpressionType.NullLiteral) => SQLExpressionType.Unknown,
+                    (SQLExpressionType.Unknown, _) => branchType,
+
+                    // If the current type is locked in, ensure the incoming branch type is compatible
+                    (_, SQLExpressionType.Unknown) => current,
+                    (_, SQLExpressionType.NullLiteral) => current,
+
+                    // Exact matches
+                    (SQLExpressionType.Number, SQLExpressionType.Number) => SQLExpressionType.Number,
+                    (SQLExpressionType.String, SQLExpressionType.String) => SQLExpressionType.String,
+                    (SQLExpressionType.Boolean, SQLExpressionType.Boolean) => SQLExpressionType.Boolean,
+
+                    // Explicit Type Mismatch!
+                    _ => throw new SyntaxErrorException($"Mismatched return types in CASE branches: cannot unify {current} and {branchType}.")
                 };
             }
-
-            if (operand.Type != lower.Type ||
-                operand.Type != upper.Type)
-            {
-                throw new SyntaxErrorException(
-                    "BETWEEN operands must have compatible types.");
-            }
-
-            // 3. Return Boolean metadata
-            return new ExpressionMetadata
-            {
-                Type = SQLValueType.Boolean,
-                IsNullable = operand.IsNullable || upper.IsNullable || lower.IsNullable,
-                IsConstant = operand.IsConstant && upper.IsConstant && lower.IsConstant
-            };
         }
-        private ExpressionMetadata AnalyzeIn(InExpression i)
+        private SQLExpressionMetadata AnalyzeBinary(BinaryExpression binary)
         {
-            var operand = AnalyzeExpression(i.Operand);
-            bool allConstant = true;
+            var left = AnalyzeExpression(binary.Left);
+            var op = binary.Operator;
+            var right = AnalyzeExpression(binary.Right);
 
-            foreach (var v in i.Values)
-            {
-                var value = AnalyzeExpression(v);
-                if (operand.Type != value.Type)
-                    throw new SyntaxErrorException(
-                        "IN values must have the same type.");
-                allConstant &= value.IsConstant;
-            }
-            allConstant &= operand.IsConstant;
-
-            return new ExpressionMetadata
-            {
-                Type = SQLValueType.Boolean,
-                IsNullable = operand.IsNullable,
-                IsConstant = allConstant
-            };
-        }
-        private ExpressionMetadata AnalyzeLike(LikeExpression l)
-        {
-            var operand = AnalyzeExpression(l.Operand);
-            var pattern = AnalyzeExpression(l.Pattern);
-
-            if (operand.Type == SQLValueType.NullLiteral || pattern.Type == SQLValueType.NullLiteral)
-                return new ExpressionMetadata
-                {
-                    Type = SQLValueType.Boolean,
-                    IsNullable = true,
-                    IsConstant = operand.IsConstant && pattern.IsConstant
-                };
-
-            if (operand.Type != SQLValueType.String)
-                throw new SyntaxErrorException("Operand Must be string!");
-
-            if (pattern.Type != SQLValueType.String)
-                throw new SyntaxErrorException("pattern Must be string!");
-
-            return new ExpressionMetadata
-            {
-                Type = SQLValueType.Boolean,
-                IsNullable = operand.IsNullable || pattern.IsNullable,
-                IsConstant = operand.IsConstant && pattern.IsConstant
-            };
-        }
-        private ExpressionMetadata AnalyzeCase(CaseExpression c)
-        {
-            SQLValueType? targetType = null;
-
-            bool allConstant = true;
-            bool anyResultNullable = false;
-
-            foreach (var conMetadata in c.Conditions)
-            {
-                var condition = AnalyzeExpression(conMetadata.Condition);
-                var result = AnalyzeExpression(conMetadata.Result);
-
-                if (condition.Type != SQLValueType.Boolean)
-                    throw new SyntaxErrorException("CASE condition must return boolean.");
-
-                if (targetType == null)
-                {
-                    targetType = result.Type;
-                }
-                else if (result.Type != targetType)
-                {
-                    throw new SyntaxErrorException(
-                        $"CASE results must have compatible types ({targetType}).");
-                }
-
-                allConstant &= condition.IsConstant && result.IsConstant;
-                anyResultNullable |= result.IsNullable;
-            }
-
-            if (c.ElseExpression != null)
-            {
-                var elseResult = AnalyzeExpression(c.ElseExpression);
-
-                if (targetType == null)
-                {
-                    targetType = elseResult.Type;
-                }
-                else if (elseResult.Type != targetType)
-                {
-                    throw new SyntaxErrorException(
-                        $"CASE ELSE type must match CASE result type ({targetType}).");
-                }
-
-                allConstant &= elseResult.IsConstant;
-                anyResultNullable |= elseResult.IsNullable;
-            }
-            else
-            {
-                anyResultNullable = true;
-            }
-
-            return new ExpressionMetadata
-            {
-                Type = targetType ?? SQLValueType.Unknown,
-                IsNullable = anyResultNullable,
-                IsConstant = allConstant
-            };
-        }
-        private ExpressionMetadata AnalyzeBinary(ExpressionMetadata left, SQLBinaryOperator op, ExpressionMetadata right)
-        {
             if (IsArithmeticOperator(op))
                 return AnalyzeArithmetic(left, op, right);
             else if (IsComparisonOperator(op))
@@ -334,169 +504,386 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 return AnalyzeBitwise(left, op, right);
 
             throw new UnreachableException($"Unhandled binary operator: {op}");
-        }
-        private ExpressionMetadata AnalyzeBitwise(ExpressionMetadata left, SQLBinaryOperator op, ExpressionMetadata right)
-        {
-            if (left.Type != SQLValueType.Number ||
-                right.Type != SQLValueType.Number)
+
+            bool IsArithmeticOperator(SQLBinaryOperator op)
             {
-                throw new SyntaxErrorException(
-                    $"Operator '{op}' requires numeric operands.");
+                return op == SQLBinaryOperator.Add ||
+                       op == SQLBinaryOperator.Subtract ||
+                       op == SQLBinaryOperator.Multiply ||
+                       op == SQLBinaryOperator.Divide ||
+                       op == SQLBinaryOperator.Modulo;
+            }
+            bool IsComparisonOperator(SQLBinaryOperator op)
+            {
+                return op == SQLBinaryOperator.Equal ||
+                       op == SQLBinaryOperator.NotEqual ||
+                       op == SQLBinaryOperator.LessThan ||
+                       op == SQLBinaryOperator.LessThanOrEqual ||
+                       op == SQLBinaryOperator.GreaterThan ||
+                       op == SQLBinaryOperator.GreaterThanOrEqual;
+            }
+            bool IsLogicalOperator(SQLBinaryOperator op)
+            {
+                return op == SQLBinaryOperator.AND ||
+                       op == SQLBinaryOperator.OR;
+            }
+            bool IsBitwiseOperator(SQLBinaryOperator op)
+            {
+                return op == SQLBinaryOperator.BitwiseAnd ||
+                       op == SQLBinaryOperator.BitwiseOr ||
+                       op == SQLBinaryOperator.BitwiseXor ||
+                       op == SQLBinaryOperator.BitwiseLeftShift ||
+                       op == SQLBinaryOperator.BitwiseRightShift;
+            }
+        }
+        private SQLExpressionMetadata AnalyzeBitwise(SQLExpressionMetadata left, SQLBinaryOperator op, SQLExpressionMetadata right)
+        {
+            bool combinedNullable = left.IsNullable || right.IsNullable ||
+                                     left.Type == SQLExpressionType.NullLiteral ||
+                                     right.Type == SQLExpressionType.NullLiteral;
+
+            bool combinedConstant = left.IsConstant && right.IsConstant;
+
+            // 1. Strict Mode Safeguard
+            if (_mode == SQLValidationMode.Strict && (left.Type == SQLExpressionType.Unknown || right.Type == SQLExpressionType.Unknown))
+            {
+                throw new SyntaxErrorException($"Cannot determine operand types for bitwise operator '{op}' in Strict mode.");
             }
 
-            return new ExpressionMetadata
+            SQLExpressionType returnType;
+
+            returnType = (left.Type, right.Type) switch
             {
-                Type = SQLValueType.Number,
-                IsNullable = left.IsNullable || right.IsNullable,
-                IsConstant = left.IsConstant && right.IsConstant
+                // 2. Pure Matching Integers/Numbers -> Returns Number
+                (SQLExpressionType.Number, SQLExpressionType.Number) => SQLExpressionType.Number,
+
+                // 3. SQL Null Handling -> Returns Number (Nullable)
+                (SQLExpressionType.Number, SQLExpressionType.NullLiteral) => SQLExpressionType.Number,
+                (SQLExpressionType.NullLiteral, SQLExpressionType.Number) => SQLExpressionType.Number,
+                (SQLExpressionType.NullLiteral, SQLExpressionType.NullLiteral) => SQLExpressionType.NullLiteral,
+
+                // 4. Unknown Inference Cases
+                (SQLExpressionType.Unknown, SQLExpressionType.Unknown) => SQLExpressionType.Unknown,
+                (SQLExpressionType.Unknown, SQLExpressionType.NullLiteral) => SQLExpressionType.Unknown,
+                (SQLExpressionType.NullLiteral, SQLExpressionType.Unknown) => SQLExpressionType.Unknown,
+
+                // If one side is Unknown and the other is a Number, infer it to match -> Number
+                (SQLExpressionType.Unknown, SQLExpressionType.Number) => SQLExpressionType.Number,
+                (SQLExpressionType.Number, SQLExpressionType.Unknown) => SQLExpressionType.Number,
+
+                // 5. Explicit Mismatch (e.g., String & Number, Boolean | Number) -> Error!
+                _ => throw new SyntaxErrorException($"Bitwise operator '{op}' can only be applied to integer/numeric expressions. Got {left.Type} and {right.Type}.")
             };
-        }
-        private ExpressionMetadata AnalyzeLogical(ExpressionMetadata left, SQLBinaryOperator op, ExpressionMetadata right)
-        {
-            if (left.Type != SQLValueType.Boolean ||
-                right.Type != SQLValueType.Boolean)
+
+            // 6. Enforce Mode Rules for double Unknown states
+            if (returnType == SQLExpressionType.Unknown && _mode == SQLValidationMode.Infer)
             {
-                throw new SyntaxErrorException(
-                    $"Operator '{op}' requires boolean operands.");
+                throw new SyntaxErrorException($"Cannot determine operand types for bitwise operator '{op}' when both sides are Unknown in Infer mode.");
             }
 
-            return new ExpressionMetadata
+            return left with
             {
-                Type = SQLValueType.Boolean,
-                IsNullable = left.IsNullable || right.IsNullable,
-                IsConstant = left.IsConstant && right.IsConstant
+                Type = returnType,
+                IsNullable = combinedNullable,
+                IsConstant = combinedConstant
             };
         }
-        private ExpressionMetadata AnalyzeComparison(ExpressionMetadata left, SQLBinaryOperator op, ExpressionMetadata right)
+        private SQLExpressionMetadata AnalyzeLogical(SQLExpressionMetadata left, SQLBinaryOperator op, SQLExpressionMetadata right)
         {
-            if (!AreComparable(left, right))
-                throw new SyntaxErrorException(
-                    $"Cannot compare {left.Type} and {right.Type}");
+            bool combinedNullable = left.IsNullable || right.IsNullable ||
+                                     left.Type == SQLExpressionType.NullLiteral ||
+                                     right.Type == SQLExpressionType.NullLiteral;
 
-            return new ExpressionMetadata
+            bool combinedConstant = left.IsConstant && right.IsConstant;
+
+            // 1. Strict Mode Safeguard
+            if (_mode == SQLValidationMode.Strict && (left.Type == SQLExpressionType.Unknown || right.Type == SQLExpressionType.Unknown))
             {
-                Type = SQLValueType.Boolean,
-                IsNullable = left.IsNullable || right.IsNullable,
-                IsConstant = left.IsConstant && right.IsConstant
+                throw new SyntaxErrorException($"Cannot determine operand types for logical operator '{op}' in Strict mode.");
+            }
+
+            SQLExpressionType returnType;
+
+            returnType = (left.Type, right.Type) switch
+            {
+                // 2. Pure Matching Types -> Returns Boolean
+                (SQLExpressionType.Boolean, SQLExpressionType.Boolean) => SQLExpressionType.Boolean,
+
+                // 3. SQL Null Handling for Logical (Three-Valued Logic) -> Returns Boolean (Nullable)
+                (SQLExpressionType.Boolean, SQLExpressionType.NullLiteral) => SQLExpressionType.Boolean,
+                (SQLExpressionType.NullLiteral, SQLExpressionType.Boolean) => SQLExpressionType.Boolean,
+                (SQLExpressionType.NullLiteral, SQLExpressionType.NullLiteral) => SQLExpressionType.Boolean,
+
+                // 4. Unknown Inference Cases
+                (SQLExpressionType.Unknown, SQLExpressionType.Unknown) => SQLExpressionType.Unknown,
+                (SQLExpressionType.Unknown, SQLExpressionType.NullLiteral) => SQLExpressionType.Unknown,
+                (SQLExpressionType.NullLiteral, SQLExpressionType.Unknown) => SQLExpressionType.Unknown,
+
+                // If one side is Unknown and the other is a Boolean, infer it to match -> Boolean
+                (SQLExpressionType.Unknown, SQLExpressionType.Boolean) => SQLExpressionType.Boolean,
+                (SQLExpressionType.Boolean, SQLExpressionType.Unknown) => SQLExpressionType.Boolean,
+
+                // 5. Explicit Mismatch (e.g., Number AND Boolean) -> Error!
+                _ => throw new SyntaxErrorException($"Logical operator '{op}' can only be applied to Boolean expressions. Got {left.Type} and {right.Type}.")
+            };
+
+            // 5. Enforce Mode Rules for double Unknown states
+            if (returnType == SQLExpressionType.Unknown && _mode == SQLValidationMode.Infer)
+            {
+                throw new SyntaxErrorException($"Cannot determine operand types for logical operator '{op}' when both sides are Unknown in Infer mode.");
+            }
+
+            return left with
+            {
+                Type = returnType,
+                IsNullable = combinedNullable,
+                IsConstant = combinedConstant
             };
         }
-        private ExpressionMetadata AnalyzeArithmetic(ExpressionMetadata left, SQLBinaryOperator op, ExpressionMetadata right)
+        private SQLExpressionMetadata AnalyzeComparison(SQLExpressionMetadata left, SQLBinaryOperator op, SQLExpressionMetadata right)
         {
-            if (op == SQLBinaryOperator.Add)
+            bool combinedNullable = left.IsNullable || right.IsNullable ||
+                                     left.Type == SQLExpressionType.NullLiteral ||
+                                     right.Type == SQLExpressionType.NullLiteral;
+
+            bool combinedConstant = left.IsConstant && right.IsConstant;
+
+            // 1. Strict Mode Safeguard: Unknown is illegal in strict mode
+            if (_mode == SQLValidationMode.Strict && (left.Type == SQLExpressionType.Unknown || right.Type == SQLExpressionType.Unknown))
             {
-                return (left.Type, right.Type) switch
+                throw new SyntaxErrorException($"Cannot determine operand types for comparison operator '{op}' in Strict mode.");
+            }
+
+            SQLExpressionType returnType;
+
+            returnType = (left.Type, right.Type) switch
+            {
+                // 2. Pure Matching Types Returns Boolean
+                (SQLExpressionType.Number, SQLExpressionType.Number) => SQLExpressionType.Boolean,
+                (SQLExpressionType.String, SQLExpressionType.String) => SQLExpressionType.Boolean,
+                (SQLExpressionType.Boolean, SQLExpressionType.Boolean) => SQLExpressionType.Boolean,
+                (SQLExpressionType.DateTime, SQLExpressionType.DateTime) => SQLExpressionType.Boolean,
+
+                // 3. SQL Null Handling for Comparison -> Always produces a Boolean (Nullable)
+                (SQLExpressionType.Number, SQLExpressionType.NullLiteral) => SQLExpressionType.Boolean,
+                (SQLExpressionType.NullLiteral, SQLExpressionType.Number) => SQLExpressionType.Boolean,
+                (SQLExpressionType.String, SQLExpressionType.NullLiteral) => SQLExpressionType.Boolean,
+                (SQLExpressionType.NullLiteral, SQLExpressionType.String) => SQLExpressionType.Boolean,
+                (SQLExpressionType.Boolean, SQLExpressionType.NullLiteral) => SQLExpressionType.Boolean,
+                (SQLExpressionType.NullLiteral, SQLExpressionType.Boolean) => SQLExpressionType.Boolean,
+                (SQLExpressionType.NullLiteral, SQLExpressionType.NullLiteral) => SQLExpressionType.Boolean,
+
+                // 4. Unknown Inference Cases
+                (SQLExpressionType.Unknown, SQLExpressionType.Unknown) => SQLExpressionType.Unknown,
+                (SQLExpressionType.Unknown, SQLExpressionType.NullLiteral) => SQLExpressionType.Unknown,
+                (SQLExpressionType.NullLiteral, SQLExpressionType.Unknown) => SQLExpressionType.Unknown,
+
+                // If one side is Unknown and the other is a known type, infer valid comparison -> Boolean
+                (SQLExpressionType.Unknown, _) => SQLExpressionType.Boolean,
+                (_, SQLExpressionType.Unknown) => SQLExpressionType.Boolean,
+
+                // 5. Explicit Mismatch (e.g., String = Number) -> Error!
+                _ => throw new SyntaxErrorException($"Comparison operator '{op}' cannot compare mismatched types {left.Type} and {right.Type}.")
+            };
+
+            // 5. Enforce Mode Rules for double Unknown states
+            if (returnType == SQLExpressionType.Unknown && _mode == SQLValidationMode.Infer)
+            {
+                throw new SyntaxErrorException($"Cannot determine operand types for comparison operator '{op}' when both sides are Unknown in Infer mode.");
+            }
+
+            return left with
+            {
+                Type = returnType,
+                IsNullable = combinedNullable,
+                IsConstant = combinedConstant
+            };
+        }
+        private SQLExpressionMetadata AnalyzeArithmetic(SQLExpressionMetadata left, SQLBinaryOperator op, SQLExpressionMetadata right)
+        {
+            bool combinedNullable = left.IsNullable || right.IsNullable;
+            bool combinedConstant = left.IsConstant && right.IsConstant;
+
+            // 1. Strict Mode Safeguard: Unknown is instantly illegal
+            if (_mode == SQLValidationMode.Strict && (left.Type == SQLExpressionType.Unknown || right.Type == SQLExpressionType.Unknown))
+            {
+                throw new SyntaxErrorException($"Cannot determine operand types for arithmetic operator '{op}' in Strict mode.");
+            }
+
+            // 2. Early Null Propagation
+            if (left.Type == SQLExpressionType.NullLiteral && right.Type != SQLExpressionType.NullLiteral)
+            {
+                // 'NULL + 5' is a Number (that evaluates to null)
+                return right with
                 {
-                    (SQLValueType.Unknown, SQLValueType.Unknown)
-                        => new ExpressionMetadata
-                        {
-                            Type = SQLValueType.Unknown,
-                            IsNullable = true
-                        },
-
-                    (SQLValueType.Number, SQLValueType.Number)
-                        => new ExpressionMetadata
-                        {
-                            Type = SQLValueType.Number,
-                            IsNullable = left.IsNullable || right.IsNullable,
-                            IsConstant = left.IsConstant && right.IsConstant
-                        },
-
-                    (SQLValueType.String, SQLValueType.String)
-                        => new ExpressionMetadata
-                        {
-                            Type = SQLValueType.String,
-                            IsNullable = left.IsNullable || right.IsNullable,
-                            IsConstant = left.IsConstant && right.IsConstant
-                        },
-
-                    _ => throw new SyntaxErrorException($"Operator '{op}' cannot be applied to {left.Type} and {right.Type}.")
+                    IsNullable = true,
+                    IsConstant = combinedConstant
                 };
             }
 
-            // -, *, /, %
-            return (left.Type, right.Type) switch
+            if (right.Type == SQLExpressionType.NullLiteral && left.Type != SQLExpressionType.NullLiteral)
             {
-                (SQLValueType.Number, SQLValueType.Number)
-                    => new ExpressionMetadata
-                    {
-                        Type = SQLValueType.Number,
-                        IsNullable = left.IsNullable || right.IsNullable,
-                        IsConstant = left.IsConstant && right.IsConstant,
-                    },
+                // ''s' + NULL' is a String (that evaluates to null)
+                return left with
+                {
+                    IsNullable = true,
+                    IsConstant = combinedConstant
+                };
+            }
 
-                _ => throw new SyntaxErrorException($"Operator '{op}' cannot be applied to {left.Type} and {right.Type}.")
+            if (left.Type == SQLExpressionType.NullLiteral && right.Type == SQLExpressionType.NullLiteral)
+            {
+                // 'NULL + NULL' stays a NullLiteral
+                return new SQLExpressionMetadata
+                {
+                    Type = SQLExpressionType.NullLiteral,
+                    IsNullable = true,
+                    IsConstant = true
+                };
+            }
+
+            SQLExpressionType returnType;
+
+            // 3. Handle Addition (The Overloaded String/Math Operator)
+            if (op == SQLBinaryOperator.Add)
+            {
+                // Fail early if mixing String and Number explicitly
+                if ((left.Type == SQLExpressionType.String && right.Type == SQLExpressionType.Number) ||
+                    (left.Type == SQLExpressionType.Number && right.Type == SQLExpressionType.String))
+                {
+                    throw new SyntaxErrorException($"Cannot apply operator '+' between {left.Type} and {right.Type}. Use CAST to convert explicit types.");
+                }
+
+                returnType = (left.Type, right.Type) switch
+                {
+                    (SQLExpressionType.String, SQLExpressionType.String) => SQLExpressionType.String,
+                    (SQLExpressionType.Number, SQLExpressionType.Number) => SQLExpressionType.Number,
+
+                    // Unknown inference cases
+                    // String
+                    (SQLExpressionType.Unknown, SQLExpressionType.String) => SQLExpressionType.String,
+                    (SQLExpressionType.String, SQLExpressionType.Unknown) => SQLExpressionType.String,
+                    // Number
+                    (SQLExpressionType.Unknown, SQLExpressionType.Number) => SQLExpressionType.Number,
+                    (SQLExpressionType.Number, SQLExpressionType.Unknown) => SQLExpressionType.Number,
+                    (SQLExpressionType.Unknown, SQLExpressionType.Unknown) => SQLExpressionType.Unknown,
+
+                    _ => throw new SyntaxErrorException($"Invalid types for '+' operator: {left.Type} and {right.Type}.")
+                };
+            }
+            // 4. Handle Standard Math Operations (-, *, /, %)
+            else
+            {
+                returnType = (left.Type, right.Type) switch
+                {
+                    (SQLExpressionType.Number, SQLExpressionType.Number) => SQLExpressionType.Number,
+
+                    // Unknown inference cases
+                    (SQLExpressionType.Unknown, SQLExpressionType.Number) => SQLExpressionType.Number,
+                    (SQLExpressionType.Number, SQLExpressionType.Unknown) => SQLExpressionType.Number,
+                    (SQLExpressionType.Unknown, SQLExpressionType.Unknown) => SQLExpressionType.Unknown,
+
+                    _ => throw new SyntaxErrorException($"Arithmetic operator '{op}' cannot be applied to types {left.Type} and {right.Type}.")
+                };
+            }
+
+            // 5. Enforce Mode Rules for double Unknown states (Unknown + Unknown)
+            if (returnType == SQLExpressionType.Unknown)
+            {
+                if (_mode == SQLValidationMode.Infer)
+                {
+                    throw new SyntaxErrorException($"Cannot determine operand types for arithmetic operator '{op}' when both sides are Unknown in Infer mode.");
+                }
+
+                // If mode is Lenient, it peacefully falls through here returning Unknown!
+            }
+
+            return left with
+            {
+                Type = returnType,
+                IsNullable = combinedNullable,
+                IsConstant = combinedConstant
             };
         }
-        private ExpressionMetadata AnalyzeLiteral(LiteralExpression literal)
+        private SQLExpressionMetadata AnalyzeLiteral(LiteralExpression literal)
         {
             if (literal.Type == SQLLiteralType.UnicodeString)
             {
-                return new ExpressionMetadata
+                return new SQLExpressionMetadata
                 {
-                    Type = SQLValueType.String,
+                    Type = SQLExpressionType.String,
                     IsConstant = true,
-                    IsNullable = true,
+                    IsNullable = false,
+                };
+            }
+            else if (literal.Type == SQLLiteralType.Datetime)
+            {
+                return new SQLExpressionMetadata
+                {
+                    Type = SQLExpressionType.DateTime,
+                    IsConstant = true,
+                    IsNullable = false
                 };
             }
             else if (literal.Type == SQLLiteralType.String)
             {
-                return new ExpressionMetadata
+                return new SQLExpressionMetadata
                 {
-                    Type = SQLValueType.String,
+                    Type = SQLExpressionType.String,
                     IsConstant = true,
-                    IsNullable = true,
+                    IsNullable = false,
                 };
             }
             else if (literal.Type == SQLLiteralType.Integer)
             {
-                return new ExpressionMetadata
+                return new SQLExpressionMetadata
                 {
-                    Type = SQLValueType.Number,
+                    Type = SQLExpressionType.Number,
                     IsConstant = true,
                     IsNullable = false,
                 };
             }
             else if (literal.Type == SQLLiteralType.Scientific)
             {
-                return new ExpressionMetadata
+                return new SQLExpressionMetadata
                 {
-                    Type = SQLValueType.Number,
+                    Type = SQLExpressionType.Number,
                     IsConstant = true,
-                    IsNullable = true,
+                    IsNullable = false,
                 };
             }
             else if (literal.Type == SQLLiteralType.Decimal)
             {
-                return new ExpressionMetadata
+                return new SQLExpressionMetadata
                 {
-                    Type = SQLValueType.Number,
+                    Type = SQLExpressionType.Number,
                     IsConstant = true,
-                    IsNullable = true,
+                    IsNullable = false,
                 };
             }
             else if (literal.Type == SQLLiteralType.BinaryLiteral)
             {
-                return new ExpressionMetadata
+                return new SQLExpressionMetadata
                 {
-                    Type = SQLValueType.Binary,
+                    Type = SQLExpressionType.Binary,
                     IsConstant = true,
-                    IsNullable = true,
+                    IsNullable = false,
                 };
             }
             else if (literal.Type == SQLLiteralType.Money)
             {
-                return new ExpressionMetadata
+                return new SQLExpressionMetadata
                 {
-                    Type = SQLValueType.Number,
+                    Type = SQLExpressionType.Number,
                     IsConstant = true,
-                    IsNullable = true,
+                    IsNullable = false,
                 };
             }
             else if (literal.Type == SQLLiteralType.Null)
             {
-                return new ExpressionMetadata
+                return new SQLExpressionMetadata
                 {
-                    Type = SQLValueType.NullLiteral,
+                    Type = SQLExpressionType.NullLiteral,
                     IsConstant = true,
                     IsNullable = true,
                 };
@@ -504,45 +891,64 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             throw new SyntaxErrorException($"Unexpected literal Type '{literal.Value}' ({literal.Type})");
         }
-        private ExpressionMetadata AnalyzeWildcard(WildcardExpression wildcard)
+        private SQLExpressionMetadata AnalyzeWildcard(WildcardExpression wildcard)
         {
             if (wildcard.TableAlias != null)
             {
-                var type = ResolveAlias(wildcard.TableAlias);
-
-                return new ExpressionMetadata
+                if (wildcard.TableAlias.Count > 1)
                 {
-                    Type = SQLValueType.Unknown,
+                    throw new SyntaxErrorException(
+                        $"Invalid column reference '{string.Join(".", wildcard.TableAlias)}.*'. " +
+                        "Only a single table alias is supported.");
+                }
+
+                var type = ResolveAlias(wildcard.TableAlias[0]);
+
+                return new SQLExpressionMetadata
+                {
+                    Type = SQLExpressionType.Unknown,
                     IsWildcard = true,
+                    IsNullable = false,
+                    IsConstant = false
                 };
             }
 
-            return new ExpressionMetadata
+            return new SQLExpressionMetadata
             {
-                Type = SQLValueType.Unknown,
+                Type = SQLExpressionType.Unknown,
                 IsWildcard = true,
+                IsNullable = false,
+                IsConstant = false
             };
         }
-        private ExpressionMetadata AnalyzeColumn(ColumnExpression column)
+        private SQLExpressionMetadata AnalyzeColumn(ColumnExpression column)
         {
-            if (column.Table?.Count > 1)
-                throw new SyntaxErrorException($"Table Alias with the name '{string.Join(".", column.Table)}' cannot be found!");
+            if (column.Table == null)
+                throw new ArgumentNullException($"must provide alias for resolving alias!");
+
+            if (column.Table.Count > 1)
+            {
+                throw new SyntaxErrorException(
+                    $"Invalid column reference '{string.Join(".", column.Table)}.{column.Column}'. " +
+                    "Only a single table alias is supported.");
+            }
 
             var type = ResolveAlias(column.Table[0]);
-            var prop = type.GetProperty(column.Column);
+            var prop = type.GetProperty(column.Column, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
 
             if (prop == null)
                 throw new SyntaxErrorException($"column with the name '{column.Column}' cannot be found!");
 
-            var mappedType = MapType(type);
+            var mappedType = MapType(prop.PropertyType);
 
-            return new ExpressionMetadata
+            return new SQLExpressionMetadata
             {
                 IsConstant = false,
                 IsNullable = IsNullable(prop),
                 Type = mappedType,
             };
         }
+        #endregion
 
         #region Helper
         private void AddAlias(string alias, Type type)
@@ -572,97 +978,101 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             throw new InvalidOperationException($"Table alias '{alias}' doesn't exists!");
         }
-        private SQLValueType MapType(Type type)
+        private SQLExpressionType MapType(Type type)
         {
             type = Nullable.GetUnderlyingType(type) ?? type;
 
             if (type == typeof(char))
-                return SQLValueType.String;
+                return SQLExpressionType.String;
 
             else if (type == typeof(string))
-                return SQLValueType.String;
+                return SQLExpressionType.String;
 
             else if (type == typeof(bool))
-                return SQLValueType.Boolean;
+                return SQLExpressionType.Boolean;
 
             else if (type == typeof(DateTime) || type == typeof(DateTimeOffset))
-                return SQLValueType.DateTime;
+                return SQLExpressionType.DateTime;
 
             else if (type == typeof(Guid))
-                return SQLValueType.Guid;
+                return SQLExpressionType.Guid;
 
             else if (type == typeof(byte[]))
-                return SQLValueType.Number;
+                return SQLExpressionType.Number;
 
             else if (type == typeof(short))
-                return SQLValueType.Number;
+                return SQLExpressionType.Number;
 
             else if (type == typeof(int))
-                return SQLValueType.Number;
+                return SQLExpressionType.Number;
 
             else if (type == typeof(long))
-                return SQLValueType.Number;
+                return SQLExpressionType.Number;
 
             else if (type == typeof(float))
-                return SQLValueType.Number;
+                return SQLExpressionType.Number;
 
             else if (type == typeof(double))
-                return SQLValueType.Number;
+                return SQLExpressionType.Number;
 
             else if (type == typeof(decimal))
-                return SQLValueType.Number;
+                return SQLExpressionType.Number;
 
-            return SQLValueType.Unknown;
+            return SQLExpressionType.Unknown;
         }
         private bool IsNullable(PropertyInfo prop)
         {
-            var type = prop.PropertyType;
+            var nullabilityContext = new NullabilityInfoContext();
+            var nullability = nullabilityContext.Create(prop);
+            return nullability.ReadState == NullabilityState.Nullable;
+        }
+        #endregion
 
-            if (!type.IsValueType)
-                return true; // reference types
+        #region Testing
+        public SQLExpressionMetadata DebugAnalyzeExpression(SQLExpression expression)
+        {
+            return AnalyzeExpression(expression);
+        }
 
-            return Nullable.GetUnderlyingType(type) != null;
-        }
-        bool IsArithmeticOperator(SQLBinaryOperator op)
+        public SQLExpressionMetadata DebugAnalyzeColumnExpression(TableSource tableSource, SQLExpression expression)
         {
-            return op == SQLBinaryOperator.Add ||
-                   op == SQLBinaryOperator.Subtract ||
-                   op == SQLBinaryOperator.Multiply ||
-                   op == SQLBinaryOperator.Divide ||
-                   op == SQLBinaryOperator.Modulo;
+            ValidateFrom(tableSource);
+            return AnalyzeExpression(expression);
         }
-        bool IsComparisonOperator(SQLBinaryOperator op)
+
+        public SQLExpressionMetadata DebugAnalyzeWildcardExpression(TableSource tableSource, SQLExpression expression)
         {
-            return op == SQLBinaryOperator.Equal ||
-                   op == SQLBinaryOperator.NotEqual ||
-                   op == SQLBinaryOperator.LessThan ||
-                   op == SQLBinaryOperator.LessThanOrEqual ||
-                   op == SQLBinaryOperator.GreaterThan ||
-                   op == SQLBinaryOperator.GreaterThanOrEqual;
+            ValidateFrom(tableSource);
+            return AnalyzeExpression(expression);
         }
-        private bool IsLogicalOperator(SQLBinaryOperator op)
+
+        public SQLExpressionMetadata DebugAnalyzeFunctionExpression(TableSource tableSource, SQLExpression expression)
         {
-            return op == SQLBinaryOperator.AND ||
-                   op == SQLBinaryOperator.OR;
+            ValidateFrom(tableSource);
+            return AnalyzeExpression(expression);
         }
-        bool IsBitwiseOperator(SQLBinaryOperator op)
+        public SQLExpressionMetadata DebugAnalyzeCASEExpression(TableSource tableSource, SQLExpression expression)
         {
-            return op == SQLBinaryOperator.BitwiseAnd ||
-                   op == SQLBinaryOperator.BitwiseOr ||
-                   op == SQLBinaryOperator.BitwiseXor ||
-                   op == SQLBinaryOperator.BitwiseLeftShift ||
-                   op == SQLBinaryOperator.BitwiseRightShift;
+            ValidateFrom(tableSource);
+            return AnalyzeExpression(expression);
         }
-        bool AreComparable(ExpressionMetadata left, ExpressionMetadata right)
+
+        public SQLExpressionMetadata DebugAnalyzeUnaryExpression(TableSource tableSource, SQLExpression expression)
         {
-            return left.Type == right.Type ||
-               left.Type == SQLValueType.NullLiteral ||
-               right.Type == SQLValueType.NullLiteral;
+            ValidateFrom(tableSource);
+            return AnalyzeExpression(expression);
         }
-        private bool IsUnknown(ExpressionMetadata m)
+        public SQLExpressionMetadata DebugAnalyzeBinaryExpression(TableSource tableSource, SQLExpression expression)
         {
-            return m.Type == SQLValueType.Unknown ||
-                   m.Type == SQLValueType.NullLiteral;
+            ValidateFrom(tableSource);
+            return AnalyzeExpression(expression);
+        }
+
+        public (string Alias, Type type) DebugValidateFromSource(TableSource tableSource)
+        {
+            ValidateFrom(tableSource);
+            _aliases.TryGetValue(tableSource.Alias, out var aliasType);
+            return (tableSource.Alias, aliasType);
         }
         #endregion
     }

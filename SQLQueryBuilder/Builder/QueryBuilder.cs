@@ -1,5 +1,4 @@
-﻿using Dapper;
-using SQLQueryBuilder.Builder.SQLParser;
+﻿using SQLQueryBuilder.Builder.SQLParser;
 using SQLQueryBuilder.Interface;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.SQLEnum;
@@ -11,12 +10,17 @@ namespace SQLQueryBuilder.Builder
 {
     public class QueryBuilder : IQueryFrom, IQuerySelect, IQuery, IQueryFilter
     {
-        private QueryBuilder() { }
         private SQLQuery _query = new();
-        private SQLBuilderHelper _builderHelper = new SQLBuilderHelper();
-        private SQLSemanticValidator _validator = new SQLSemanticValidator();
+        private SQLBuilderHelper _builderHelper;
+        private SQLSemanticValidator _validator;
 
-        public static IQueryFrom Create() => new QueryBuilder();
+        private QueryBuilder(SQLValidationMode mode)
+        {
+            _builderHelper = new SQLBuilderHelper();
+            _validator = new SQLSemanticValidator(mode);
+        }
+
+        public static IQueryFrom Create(SQLValidationMode mode) => new QueryBuilder(mode);
 
         public IQuerySelect From<T>(string tableAlias)
         {
@@ -68,11 +72,9 @@ namespace SQLQueryBuilder.Builder
             return this;
         }
 
-        public (string sql, DynamicParameters param) Build()
+        public SQLQueryData Build()
         {
-            _validator.ValidateQuery(_query);
-
-            return (null, null);
+            return null;
         }
 
         private string GetTableName<T>()

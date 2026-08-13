@@ -22,7 +22,7 @@ namespace SQLQueryBuilder.Interface
         IQueryFilter Having(string having);
         IQueryFilter Where(string where);
         IQueryFilter Validate();
-        (string sql, DynamicParameters param) Build();
+        SQLQueryData Build();
     }
 
     public interface IQueryFilter
@@ -31,6 +31,6 @@ namespace SQLQueryBuilder.Interface
         IQueryFilter GroupBy(string groupBy);
         IQueryFilter Having(string having);
         IQueryFilter Where(string where);
-        (string sql, DynamicParameters param) Build();
+        SQLQueryData Build();
     }
 }

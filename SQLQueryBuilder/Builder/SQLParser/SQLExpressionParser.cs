@@ -420,11 +420,11 @@ namespace SQLQueryBuilder.Builder.SQLParser
             else if (!_helper.IsAtEnd && _helper.Expects(_helper.Current, SQLParserHelper.Identifiers))
                 return ParseIdentifierOrFunction();
 
-            // 4. Parenthesized Expressions or Subqueries: (a + b)
+            // 4. // Parenthesized expression: (a + b)
             else if (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.LeftParen))
                 return ParseParenthesized();
 
-            // 5. CASE ....
+            // 5. CASE ... WHEN ... THEN ... END
             else if (!_helper.IsAtEnd && _helper.IsKeyword(_helper.Current, "CASE"))
                 return ParseCASE();
 
@@ -446,8 +446,14 @@ namespace SQLQueryBuilder.Builder.SQLParser
         {
             _helper.Consume(); // Consume CASE
             var conditions = new List<CaseWhen>();
+            SQLExpression baseExpression = null;
 
-            if(!_helper.IsAtEnd && !_helper.IsKeyword(_helper.Current, "WHEN"))
+            if (!_helper.IsAtEnd && !_helper.IsKeyword(_helper.Current, "WHEN"))
+            {
+                baseExpression = ParseOR();
+            }
+
+            if (!_helper.IsAtEnd && !_helper.IsKeyword(_helper.Current, "WHEN"))
             {
                 var err = _helper.CreateErrorMessage(_helper.Input, _helper.Current.StartPosition, $"Expected 'WHEN' after CASE", errorTextLength: _helper.Current.RawLength);
                 throw new SyntaxErrorException(err);
@@ -505,6 +511,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             return new CaseExpression
             {
+                BaseExpression = baseExpression,
                 Conditions = conditions,
                 ElseExpression = elseExpression
             };
@@ -547,7 +554,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     if (_helper.Expect(_helper.Current, SQLTokenType.Asterisk))
                     {
                         _helper.Consume(); // consume '*'
-                        return new WildcardExpression { TableAlias = string.Join(".", parts) };
+                        return new WildcardExpression { TableAlias = parts };
                     }
 
                     if (!_helper.Expects(_helper.Current, SQLParserHelper.Identifiers) && !_helper.Expect(_helper.Current, SQLTokenType.Keyword))
@@ -583,6 +590,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             _helper.Consume(); // consume (
 
             var args = new List<SQLExpression>();
+            var funcType = SQLFunctionType.Unknown;
 
             while (!_helper.IsAtEnd && !_helper.Expect(_helper.Current, SQLTokenType.RightParen))
             {
@@ -602,10 +610,21 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             _helper.Consume(); // consume )
 
+            if (_helper.IsKeyword(_helper.Current, "TYPE"))
+            {
+                _helper.Consume(); // Consume keyword Type
+                if (!SQLParserHelper.SQLTypes.TryGetValue(_helper.Consume().Value, out funcType))
+                {
+                    var err = _helper.CreateErrorMessage(_helper.Input, _helper.Current.StartPosition, $"Expected function types after keyword 'TYPE' {_helper.Current.StartPosition}", errorTextLength: _helper.Current.RawLength);
+                    throw new SyntaxErrorException(err);
+                }
+            }
+
             return new FunctionExpression()
             {
                 Name = name,
-                Arguments = args
+                Arguments = args,
+                FunctionType = funcType
             };
         }
 
@@ -615,12 +634,19 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             return token.Type switch
             {
-                // Lexer already stripped single quotes/N' and unescaped inner ''
-                SQLTokenType.StringLiteral or SQLTokenType.UnicodeString => new LiteralExpression
+                SQLTokenType.StringLiteral => new LiteralExpression
                 {
                     Value = token.Value,
-                    Type = token.Type == SQLTokenType.UnicodeString ? SQLLiteralType.UnicodeString : SQLLiteralType.String
+                    Type = SQLLiteralType.String
                 },
+
+                SQLTokenType.UnicodeString => new LiteralExpression
+                {
+                    Value = token.Value,
+                    Type = SQLLiteralType.UnicodeString
+                },
+
+                SQLTokenType.DatetimeLiteral => ParseDateTime(token),
 
                 SQLTokenType.IntegerLiteral => new LiteralExpression
                 {
@@ -661,6 +687,29 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 },
 
                 _ => throw new SyntaxErrorException(_helper.CreateErrorMessage(_helper.Input, token.StartPosition, $"Expected Literal but got '{token.Value}'", errorTextLength: token.RawLength))
+            };
+        }
+
+        LiteralExpression ParseDateTime(SQLToken token)
+        {
+            if (!DateTime.TryParse(
+                    token.Value,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var value))
+            {
+                throw new SyntaxErrorException(
+                    _helper.CreateErrorMessage(
+                        _helper.Input,
+                        token.StartPosition,
+                        $"Invalid DateTime literal '{token.Value}'",
+                        errorTextLength: token.RawLength));
+            }
+
+            return new LiteralExpression
+            {
+                Value = token.Value,
+                Type = SQLLiteralType.Datetime
             };
         }
 
