@@ -25,6 +25,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             }
             var expr = _expressionParser.Parse(_helper);
             var desc = false;
+            SQLToken lastToken = _helper.Current;
 
             if (_helper.IsKeyword(_helper.Current, "DESC"))
             {
@@ -36,7 +37,12 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 _helper.Consume();
             }
 
-            orderBy.Add(new OrderByExpression { Expression = expr, Descending = desc });
+            orderBy.Add(new OrderByExpression 
+            { 
+                Span = CreateSpan(expr.Span.Start, lastToken.StartPosition, lastToken.RawLength),
+                Expression = expr, 
+                Descending = desc 
+            });
 
 
             while (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Comma))
@@ -45,6 +51,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
                 expr = _expressionParser.Parse(_helper);
                 desc = false;
+                lastToken = _helper.Current;
 
                 if (_helper.IsKeyword(_helper.Current, "DESC"))
                 {
@@ -56,7 +63,12 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     _helper.Consume();
                 }
 
-                orderBy.Add(new OrderByExpression { Expression = expr, Descending = desc });
+                orderBy.Add(new OrderByExpression 
+                {
+                    Span = CreateSpan(expr.Span.Start, lastToken.StartPosition, lastToken.RawLength),
+                    Expression = expr, 
+                    Descending = desc 
+                });
             }
 
             if (!_helper.Expect(_helper.Current, SQLTokenType.EOF))
@@ -71,6 +83,15 @@ namespace SQLQueryBuilder.Builder.SQLParser
             }
 
             return orderBy;
+        }
+        private SQLSourceSpan CreateSpan(int startPosition, int endStartPosition, int endLength)
+        {
+            int endPosition = endStartPosition + endLength;
+            return new SQLSourceSpan
+            {
+                Start = startPosition,
+                Length = endPosition - startPosition
+            };
         }
     }
 }

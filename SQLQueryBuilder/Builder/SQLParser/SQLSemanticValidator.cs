@@ -28,18 +28,17 @@ namespace SQLQueryBuilder.Builder.SQLParser
         public void ValidateBaseQuery(SQLQuery query)
         {
             ValidateFrom(query.From);
-            ValidateSelect(query.Select);
             ValidateJoins(query.Joins);
+            ValidateSelect(query.Select);
         }
 
         public void ValidateFilter(SQLQuery query)
         {
-            //ValidateHaving(query.Having);
-            //ValidateWhere(query.Where);
-            //ValidateGroupBy(query.GroupBy);
-            //ValidateOrderBy(query.OrderBy);
+            ValidateHaving(query.Having);
+            ValidateWhere(query.Where);
+            ValidateGroupBy(query.GroupBy);
+            ValidateOrderBy(query.OrderBy);
         }
-
 
         private void ValidateFrom(TableSource from)
         {
@@ -77,27 +76,44 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 }
 
                 AddAlias(table.Alias, table.Type);
+                AnalyzeExpression(join.Condition);
             }
         }
-        private void ValidateOrderBy(object orderBy)
+
+        private void ValidateWhere(SQLExpression? where)
         {
-            throw new NotImplementedException();
+            if (where != null)
+                AnalyzeExpression(where);
         }
 
-        private void ValidateHaving(object having)
+        private void ValidateHaving(SQLExpression? having)
         {
-            throw new NotImplementedException();
+            if (having != null)
+                AnalyzeExpression(having);
         }
 
-        private void ValidateGroupBy(object groupBy)
+        private void ValidateGroupBy(List<SQLExpression>? groupBy)
         {
-            throw new NotImplementedException();
+            if (groupBy != null)
+            {
+                foreach (var group in groupBy)
+                {
+                    AnalyzeExpression(group);
+                }
+            }
         }
 
-        private void ValidateWhere(object where)
+        private void ValidateOrderBy(List<OrderByExpression>? orderBy)
         {
-            throw new NotImplementedException();
+            if (orderBy != null)
+            {
+                foreach (var order in orderBy)
+                {
+                    AnalyzeExpression(order.Expression);
+                }
+            }
         }
+
         #endregion
 
         #region Analyzer
@@ -128,7 +144,8 @@ namespace SQLQueryBuilder.Builder.SQLParser
         }
         private SQLExpressionMetadata AnalyzeFunction(FunctionExpression function)
         {
-            var returnType = _sQLFunctionDefinitions.GetFunctionExpressionType(function, _mode);
+            var returnType =
+                _sQLFunctionDefinitions.GetFunctionExpressionType(function, _mode);
 
             if (returnType.type == SQLExpressionType.NullLiteral)
             {
@@ -145,14 +162,17 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 SQLNullabilityRule.Propagate => false,
                 SQLNullabilityRule.AllNullable => true,
                 SQLNullabilityRule.Never => false,
+                SQLNullabilityRule.Unknown => true,
                 _ => throw new ArgumentOutOfRangeException()
             };
 
-            bool isConstant = true;
+            bool isConstant = returnType.rule != SQLNullabilityRule.Unknown;
 
             foreach (var arg in function.Arguments)
             {
                 var metadata = AnalyzeExpression(arg);
+
+                isConstant &= metadata.IsConstant;
 
                 switch (returnType.rule)
                 {
@@ -165,10 +185,9 @@ namespace SQLQueryBuilder.Builder.SQLParser
                         break;
 
                     case SQLNullabilityRule.Never:
+                    case SQLNullabilityRule.Unknown:
                         break;
                 }
-
-                isConstant &= metadata.IsConstant;
             }
 
             return new SQLExpressionMetadata
@@ -395,6 +414,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 ? AnalyzeExpression(caseExpr.BaseExpression)
                 : null;
 
+            SQLExpressionType expectedCaseType = baseMeta == null ? SQLExpressionType.Unknown : baseMeta.Type;
             SQLExpressionType expectedReturnType = SQLExpressionType.Unknown;
             bool combinedNullable = false;
             bool combinedConstant = baseMeta?.IsConstant ?? true;
@@ -417,11 +437,13 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 // Validate the WHEN clause condition
                 if (baseMeta != null)
                 {
-                    // Simple CASE: WHEN type must match Base type (or handle Unknown rules)
-                    if (baseMeta.Type != whenMeta.Type && whenMeta.Type != SQLExpressionType.Unknown && whenMeta.Type != SQLExpressionType.NullLiteral)
-                    {
-                        throw new SyntaxErrorException($"CASE WHEN value type {whenMeta.Type} does not match base expression type {baseMeta.Type}.");
-                    }
+                    if (_mode == SQLValidationMode.Strict && expectedCaseType == SQLExpressionType.Unknown)
+                        throw new SyntaxErrorException("Cannot Determine Base Expression Type!");
+
+                    expectedCaseType = UnifyCaseTypes(expectedCaseType, whenMeta.Type);
+
+                    if (expectedCaseType == SQLExpressionType.Unknown && _mode == SQLValidationMode.Infer)
+                        throw new SyntaxErrorException("Cannot Determine Base Expression Type!");
                 }
                 else
                 {

@@ -2,7 +2,10 @@
 
 namespace SQLQueryBuilder.Model.SQL_Expression
 {
-    public abstract class SQLExpression {}
+    public abstract class SQLExpression
+    {
+        public required SQLSourceSpan Span { get; init; }
+    }
 
     public sealed class ColumnExpression : SQLExpression
     {

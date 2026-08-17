@@ -336,7 +336,7 @@ namespace SQLQueryBuilder.Model.SQL_Expression
                         "Declare function return type like MyFunction() TYPE Number");
                 }
 
-                return (returnType, SQLNullabilityRule.Propagate);
+                return (returnType, SQLNullabilityRule.Unknown);
             }
         }
 

@@ -27,7 +27,13 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 _helper.Consume(); // Consume OR
                 var right = ParseAND();
 
-                left = new BinaryExpression() { Left = left, Operator = op, Right = right };
+                left = new BinaryExpression 
+                {
+                    Span = CreateSpan(left.Span.Start, right.Span),
+                    Left = left, 
+                    Operator = op, 
+                    Right = right 
+                };
             }
             return left;
         }
@@ -42,7 +48,13 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 _helper.Consume(); // Consume AND
                 var right = ParseNOT();
 
-                left = new BinaryExpression() { Left = left, Operator = op, Right = right };
+                left = new BinaryExpression
+                {
+                    Span = CreateSpan(left.Span.Start, right.Span),
+                    Left = left, 
+                    Operator = op, 
+                    Right = right 
+                };
             }
             return left;
         }
@@ -50,7 +62,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
         {
             if (_helper.IsKeyword(_helper.Current, "NOT") && !IsPredicateNot())
             {
-                _helper.Consume(); // NOT
+                var start = _helper.Consume(); // NOT
 
                 if (_helper.Expect(_helper.Current, SQLTokenType.NullLiteral))
                 {
@@ -67,6 +79,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
                 return new UnaryExpression
                 {
+                    Span = CreateSpan(start.StartPosition, operand.Span),
                     Operator = SQLUnaryOperator.NOT,
                     Operand = operand
                 };
@@ -102,10 +115,11 @@ namespace SQLQueryBuilder.Builder.SQLParser
                             "Expected NULL after IS or IS NOT."));
                 }
 
-                _helper.Consume(); // NULL
+                var lastToken = _helper.Consume(); // NULL
 
                 return new IsNullExpression
                 {
+                    Span = CreateSpan(left.Span.Start, lastToken.StartPosition, lastToken.RawLength),
                     Operand = left,
                     IsNot = isNot
                 };
@@ -119,17 +133,19 @@ namespace SQLQueryBuilder.Builder.SQLParser
             if (_helper.IsKeyword(_helper.Current, "LIKE"))
             {
                 _helper.Consume(); // consume LIKE
+                var pattern = ParseBitwiseXor();
 
                 return new LikeExpression
                 {
+                    Span = CreateSpan(left.Span.Start, pattern.Span),
                     Operand = left,
                     IsNot = isNot,
-                    Pattern = ParseBitwiseXor()
+                    Pattern = pattern
                 };
             }
             else if (_helper.IsKeyword(_helper.Current, "IN"))
             {
-                _helper.Consume(); // consume IN
+                var start = _helper.Consume(); // consume IN
 
                 List<SQLExpression> values = new();
 
@@ -177,10 +193,11 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     throw new SyntaxErrorException(err);
                 }
 
-                _helper.Consume(); // consume )
+                var end = _helper.Consume(); // consume )
 
                 return new InExpression
                 {
+                    Span = CreateSpan(left.Span.Start, end.StartPosition, end.RawLength),
                     Operand = left,
                     IsNot = isNot,
                     Values = values
@@ -203,6 +220,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
                 return new BetweenExpression
                 {
+                    Span = CreateSpan(left.Span.Start, upper.Span),
                     Operand = left,
                     IsNot = isNot,
                     Lower = lower,
@@ -222,7 +240,14 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 _helper.Consume();
                 var right = ParseBitwiseOr();
 
-                left = new BinaryExpression() { Left = left, Operator = op, Right = right };
+                var start = left.Span.Start;
+                left = new BinaryExpression
+                {
+                    Span = CreateSpan(start, right.Span),
+                    Left = left,
+                    Operator = op,
+                    Right = right
+                };
             }
 
             return left;
@@ -238,8 +263,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 _helper.Consume(); // Consume BitwiseOr
                 var right = ParseBitwiseXor();
 
-                left = new BinaryExpression()
+                var start = left.Span.Start;
+                left = new BinaryExpression
                 {
+                    Span = CreateSpan(start, right.Span),
                     Left = left,
                     Operator = op,
                     Right = right
@@ -259,8 +286,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 _helper.Consume(); // Consume BitwiseXor
                 var right = ParseBitwiseAnd();
 
-                left = new BinaryExpression()
+                var start = left.Span.Start;
+                left = new BinaryExpression
                 {
+                    Span = CreateSpan(start, right.Span),
                     Left = left,
                     Operator = op,
                     Right = right
@@ -280,8 +309,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 _helper.Consume(); // Consume BitwiseAnd
                 var right = ParseBitwiseShift();
 
-                left = new BinaryExpression() 
+                var start = left.Span.Start;
+                left = new BinaryExpression
                 {
+                    Span = CreateSpan(start, right.Span),
                     Left = left,
                     Operator = op,
                     Right = right
@@ -309,8 +340,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
                 var right = ParseAddition();
 
-                left = new BinaryExpression()
+                var start = left.Span.Start;
+                left = new BinaryExpression
                 {
+                    Span = CreateSpan(start, right.Span),
                     Left = left,
                     Operator = op,
                     Right = right
@@ -331,8 +364,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 var op = _helper.Consume().Type == SQLTokenType.Plus ? SQLBinaryOperator.Add : SQLBinaryOperator.Subtract; // Consume  +/-
                 var right = ParseMultiplication();
 
-                left = new BinaryExpression()
+                var start = left.Span.Start;
+                left = new BinaryExpression
                 {
+                    Span = CreateSpan(start, right.Span),
                     Left = left,
                     Operator = op,
                     Right = right
@@ -361,7 +396,14 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 };
 
                 var right = ParseUnary();
-                left = new BinaryExpression { Left = left, Operator = op, Right = right };
+                var start = left.Span.Start;
+                left = new BinaryExpression 
+                { 
+                    Span = CreateSpan(start, right.Span), 
+                    Left = left, 
+                    Operator = op, 
+                    Right = right 
+                };
             }
 
             return left;
@@ -370,36 +412,44 @@ namespace SQLQueryBuilder.Builder.SQLParser
         {
             if (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Minus))
             {
-                _helper.Consume();
+                SQLToken opToken = _helper.Consume(); // Capture the operator token first
+                SQLExpression operand = ParseUnary(); // Recurse to get the rest of the expression
 
                 return new UnaryExpression()
                 {
+                    // Span starts at the operator '-' and ends wherever the operand ends
+                    Span = CreateSpan(opToken.StartPosition, operand.Span),
                     Operator = SQLUnaryOperator.Negative,
-                    Operand = ParseUnary()
+                    Operand = operand
                 };
             }
 
             if (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.BitwiseNot))
             {
-                _helper.Consume();
+                SQLToken opToken = _helper.Consume();
+                SQLExpression operand = ParseUnary();
 
                 return new UnaryExpression()
                 {
+                    Span = CreateSpan(opToken.StartPosition, operand.Span),
                     Operator = SQLUnaryOperator.BitwiseNOT,
-                    Operand = ParseUnary()
+                    Operand = operand
                 };
             }
 
             if (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Plus))
             {
-                _helper.Consume();
+                SQLToken opToken = _helper.Consume();
+                SQLExpression operand = ParseUnary();
 
-                return new UnaryExpression
+                return new UnaryExpression()
                 {
+                    Span = CreateSpan(opToken.StartPosition, operand.Span),
                     Operator = SQLUnaryOperator.Positive,
-                    Operand = ParseUnary()
+                    Operand = operand
                 };
             }
+
             return ParsePrimary();
         }
 
@@ -408,8 +458,8 @@ namespace SQLQueryBuilder.Builder.SQLParser
             // 1. Wildcard
             if (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Asterisk))
             {
-                _helper.Consume();
-                return new WildcardExpression();
+                var token = _helper.Consume();
+                return new WildcardExpression { Span = CreateSpan(token) };
             }
 
             // 2. Literals (123, 'abc', NULL, etc.)
@@ -444,7 +494,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
         private SQLExpression ParseCASE()
         {
-            _helper.Consume(); // Consume CASE
+            var start = _helper.Consume(); // Consume CASE
             var conditions = new List<CaseWhen>();
             SQLExpression baseExpression = null;
 
@@ -507,10 +557,11 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 throw new SyntaxErrorException(err);
             }
 
-            _helper.Consume(); // consume END
+            var end = _helper.Consume(); // consume END
 
             return new CaseExpression
             {
+                Span = CreateSpan(start.StartPosition, end.StartPosition, end.RawLength),
                 BaseExpression = baseExpression,
                 Conditions = conditions,
                 ElseExpression = elseExpression
@@ -536,11 +587,12 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
         private SQLExpression ParseIdentifierOrFunction()
         {
-            var name = _helper.Consume().Value;
+            var token = _helper.Consume();
+            var name = token.Value;
 
             if (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.LeftParen))
             {
-                return ParseFunction(name);
+                return ParseFunction(name, token);
             }
             else if (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Dot))
             {
@@ -554,7 +606,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     if (_helper.Expect(_helper.Current, SQLTokenType.Asterisk))
                     {
                         _helper.Consume(); // consume '*'
-                        return new WildcardExpression { TableAlias = parts };
+                        return new WildcardExpression {Span = CreateSpan(token), TableAlias = parts };
                     }
 
                     if (!_helper.Expects(_helper.Current, SQLParserHelper.Identifiers) && !_helper.Expect(_helper.Current, SQLTokenType.Keyword))
@@ -569,10 +621,8 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
                 return new ColumnExpression
                 {
-                    Table = parts.Count > 0
-                        ? parts
-                        : null,
-
+                    Span = CreateSpan(token),
+                    Table = parts.Count > 0 ? parts : null,
                     Column = column
                 };
             }
@@ -580,12 +630,13 @@ namespace SQLQueryBuilder.Builder.SQLParser
             // 3. Simple Unqualified Identifier: age, name, status
             return new ColumnExpression()
             {
+                Span = CreateSpan(token),
                 Column = name
             };
 
         }
 
-        private SQLExpression ParseFunction(string name)
+        private SQLExpression ParseFunction(string name, SQLToken startToken)
         {
             _helper.Consume(); // consume (
 
@@ -608,20 +659,30 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 throw new SyntaxErrorException(err);
             }
 
-            _helper.Consume(); // consume )
+            SQLToken lastToken = _helper.Consume(); // consume ')'
 
             if (_helper.IsKeyword(_helper.Current, "TYPE"))
             {
                 _helper.Consume(); // Consume keyword Type
+                SQLToken typeToken = _helper.Current;
                 if (!SQLParserHelper.SQLTypes.TryGetValue(_helper.Consume().Value, out funcType))
                 {
                     var err = _helper.CreateErrorMessage(_helper.Input, _helper.Current.StartPosition, $"Expected function types after keyword 'TYPE' {_helper.Current.StartPosition}", errorTextLength: _helper.Current.RawLength);
                     throw new SyntaxErrorException(err);
                 }
+
+                lastToken = typeToken;
             }
+
+            int endPosition = lastToken.StartPosition + lastToken.RawLength;
 
             return new FunctionExpression()
             {
+                Span = new SQLSourceSpan
+                {
+                    Start = startToken.StartPosition,
+                    Length = endPosition - startToken.StartPosition
+                },
                 Name = name,
                 Arguments = args,
                 FunctionType = funcType
@@ -636,12 +697,14 @@ namespace SQLQueryBuilder.Builder.SQLParser
             {
                 SQLTokenType.StringLiteral => new LiteralExpression
                 {
+                    Span = CreateSpan(token),
                     Value = token.Value,
                     Type = SQLLiteralType.String
                 },
 
                 SQLTokenType.UnicodeString => new LiteralExpression
                 {
+                    Span = CreateSpan(token),
                     Value = token.Value,
                     Type = SQLLiteralType.UnicodeString
                 },
@@ -650,18 +713,21 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
                 SQLTokenType.IntegerLiteral => new LiteralExpression
                 {
+                    Span = CreateSpan(token),
                     Value = int.Parse(token.Value),
                     Type = SQLLiteralType.Integer
                 },
 
                 SQLTokenType.DecimalLiteral => new LiteralExpression
                 {
+                    Span = CreateSpan(token),
                     Value = decimal.Parse(token.Value),
                     Type = SQLLiteralType.Decimal
                 },
 
                 SQLTokenType.ScientificLiteral => new LiteralExpression
                 {
+                    Span = CreateSpan(token),
                     Value = double.Parse(token.Value, NumberStyles.Float, CultureInfo.InvariantCulture),
                     Type = SQLLiteralType.Scientific
                 },
@@ -669,6 +735,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 // Lexer already stripped '$'
                 SQLTokenType.MoneyLiteral => new LiteralExpression
                 {
+                    Span = CreateSpan(token),
                     Value = decimal.Parse(token.Value, CultureInfo.InvariantCulture),
                     Type = SQLLiteralType.Money
                 },
@@ -676,12 +743,14 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 // Lexer already stripped '0x'
                 SQLTokenType.HexLiteral => new LiteralExpression
                 {
+                    Span = CreateSpan(token),
                     Value = Convert.FromHexString(token.Value),
                     Type = SQLLiteralType.BinaryLiteral
                 },
 
                 SQLTokenType.NullLiteral => new LiteralExpression
                 {
+                    Span = CreateSpan(token),
                     Value = null,
                     Type = SQLLiteralType.Null
                 },
@@ -708,6 +777,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             return new LiteralExpression
             {
+                Span = CreateSpan(token),
                 Value = token.Value,
                 Type = SQLLiteralType.Datetime
             };
@@ -721,6 +791,29 @@ namespace SQLQueryBuilder.Builder.SQLParser
             return _helper.IsKeyword(_helper.Peek(), "IN")
                 || _helper.IsKeyword(_helper.Peek(), "LIKE")
                 || _helper.IsKeyword(_helper.Peek(), "BETWEEN");
+        }
+
+        private SQLSourceSpan CreateSpan(SQLToken token)
+        {
+            return new SQLSourceSpan { Start = token.StartPosition, Length = token.RawLength };
+        }
+        private SQLSourceSpan CreateSpan(int startPosition, SQLSourceSpan endSpan)
+        {
+            int endPosition = endSpan.Start + endSpan.Length;
+            return new SQLSourceSpan
+            {
+                Start = startPosition,
+                Length = endPosition - startPosition
+            };
+        }
+        private SQLSourceSpan CreateSpan(int startPosition, int endStartPosition, int endLength)
+        {
+            int endPosition = endStartPosition + endLength;
+            return new SQLSourceSpan
+            {
+                Start = startPosition,
+                Length = endPosition - startPosition
+            };
         }
     }
 }

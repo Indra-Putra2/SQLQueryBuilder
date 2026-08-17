@@ -11,8 +11,9 @@ namespace SQLQueryBuilder.Builder
     public class QueryBuilder : IQueryFrom, IQuerySelect, IQuery, IQueryFilter
     {
         private SQLQuery _query = new();
-        private SQLBuilderHelper _builderHelper;
+        private SQLBuilderHelper _builderHelper = new();
         private SQLSemanticValidator _validator;
+        private SQLGenerator _queryGenerator = new();
 
         private QueryBuilder(SQLValidationMode mode)
         {
@@ -25,7 +26,13 @@ namespace SQLQueryBuilder.Builder
         public IQuerySelect From<T>(string tableAlias)
         {
             var name = _builderHelper.BuildFrom(GetTableName<T>());
-            _query.From = new TableSource { Type = typeof(T), TableName = name, Alias = ParseAlias(tableAlias) };
+            _query.From = new TableSource
+            {
+                Type = typeof(T),
+                TableName = name,
+                Alias = ParseAlias(tableAlias)
+            };
+
             return this;
         }
 
@@ -37,8 +44,21 @@ namespace SQLQueryBuilder.Builder
         public IQuery Join<T>(string tableAlias, string joinCondition, SQLJoinType joinType = SQLJoinType.INNER)
         {
             var name = _builderHelper.BuildFrom(GetTableName<T>());
-            var table = new TableSource { Type = typeof(T), TableName = name, Alias = ParseAlias(tableAlias) };
-            var join = new JoinSource { Table = table, Condition = _builderHelper.BuildPredicate(joinCondition), JoinType = joinType };
+
+            var table = new TableSource
+            {
+                Type = typeof(T),
+                TableName = name,
+                Alias = ParseAlias(tableAlias)
+            };
+
+            var join = new JoinSource
+            {
+                Table = table,
+                Condition = _builderHelper.BuildPredicate(joinCondition),
+                JoinType = joinType
+            };
+
             _query.Joins.Add(join);
             return this;
         }
@@ -74,7 +94,15 @@ namespace SQLQueryBuilder.Builder
 
         public SQLQueryData Build()
         {
-            return null;
+            _validator.ValidateBaseQuery(_query);
+
+            var queryData = new SQLQueryData
+            {
+                SQL = _queryGenerator.BuildBaseQuery(_query),
+                Parameters = null
+            };
+
+            return queryData;
         }
 
         private string GetTableName<T>()
@@ -83,10 +111,10 @@ namespace SQLQueryBuilder.Builder
             return type.GetCustomAttribute<TableAttribute>()?.Name ?? type.Name;
         }
 
-        private string ParseAlias(string? alias)
+        private string ParseAlias(string alias)
         {
             if (string.IsNullOrWhiteSpace(alias))
-                return null;
+                throw new ArgumentNullException("Alias cannot be null!");
 
             var tokens = _builderHelper.BuildTokens(alias);
 

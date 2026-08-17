@@ -1,7 +1,6 @@
 ﻿using SQLQueryBuilder.Model;
 using SQLQueryBuilder.SQLEnum;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace SQLQueryBuilder.Builder.SQLParser
 {
@@ -33,25 +32,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
             ["DATETIME"] = SQLFunctionType.DateTime,
             ["BINARY"] = SQLFunctionType.Binary,
         };
-        public Dictionary<string, SQLUnaryOperator> UnaryOperators =
-        new()
-        {
-            ["+"] = SQLUnaryOperator.Positive,
-            ["-"] = SQLUnaryOperator.Negative,
-            ["~"] = SQLUnaryOperator.BitwiseNOT,
-            ["NOT"] = SQLUnaryOperator.NOT,
-            ["EXISTS"] = SQLUnaryOperator.EXISTS,
-        };
-
         // Definitions
         public static readonly HashSet<SQLTokenType> Identifiers =
         [
             SQLTokenType.Identifier,
-            SQLTokenType.BracketIdentifier,
-            SQLTokenType.DoubleQuoteIdentifier,
-        ];
-        public static readonly HashSet<SQLTokenType> QuotedOrBracketedIdentifier =
-        [
             SQLTokenType.BracketIdentifier,
             SQLTokenType.DoubleQuoteIdentifier,
         ];
@@ -71,23 +55,6 @@ namespace SQLQueryBuilder.Builder.SQLParser
             SQLTokenType.MoneyLiteral,
             SQLTokenType.NullLiteral
         ];
-        public static readonly HashSet<SQLTokenType> Arithmetic =
-        [
-            SQLTokenType.Plus,
-            SQLTokenType.Minus,
-            SQLTokenType.Divide,
-            SQLTokenType.Modulo,
-            SQLTokenType.Asterisk,
-        ];
-        public static readonly HashSet<SQLTokenType> Bitwise =
-        [
-            SQLTokenType.BitwiseAnd,
-            SQLTokenType.BitwiseOr,
-            SQLTokenType.BitwiseXor,
-            SQLTokenType.BitwiseNot,
-            SQLTokenType.BitwiseLeftShift,
-            SQLTokenType.BitwiseRightShift,
-        ];
         public static readonly HashSet<SQLTokenType> Comparison =
         [
             SQLTokenType.Equal,
@@ -97,39 +64,16 @@ namespace SQLQueryBuilder.Builder.SQLParser
             SQLTokenType.GreaterThan,
             SQLTokenType.GreaterThanOrEqual,
         ];
-        public static readonly HashSet<SQLTokenType> Assignment =
-        [
-            SQLTokenType.PlusEquals,
-            SQLTokenType.MinusEquals,
-            SQLTokenType.MultiplyEquals,
-            SQLTokenType.DivideEquals,
-            SQLTokenType.ModuloEquals,
-        ];
         public static readonly HashSet<SQLTokenType> DelimitersAndTerminators =
         [
             SQLTokenType.Comma,
             SQLTokenType.Semicolon,
             SQLTokenType.EOF,
         ];
-        public static readonly HashSet<SQLTokenType> Parentheses =
-        [
-            SQLTokenType.LeftParen,
-            SQLTokenType.RightParen,
-        ];
-        public static readonly HashSet<SQLTokenType> LiteralsAndIdentifiers =
-        [
-            ..Identifiers,
-            ..Literals,
-        ];
         public static readonly HashSet<SQLTokenType> AllowedAliases =
         [
             ..Identifiers,
             SQLTokenType.StringLiteral,
-        ];
-        public static readonly HashSet<SQLTokenType> AllowedFunctionType =
-        [
-            SQLTokenType.NullLiteral,
-            SQLTokenType.SQLType,
         ];
 
         //Methods
@@ -143,27 +87,26 @@ namespace SQLQueryBuilder.Builder.SQLParser
             Index = 0;
         }
 
-        public SQLToken Current =>
-            Index < Tokens.Count ? Tokens[Index] : Tokens[^1];
-        public SQLToken Peek(int offset = 1) =>
-            Index + offset < Tokens.Count ? Tokens[Index + offset] : Tokens[^1];
-        public SQLToken Consume() =>
-            Index < Tokens.Count ? Tokens[Index++] : Tokens[^1];
+        public SQLToken Current => Index < Tokens.Count ? Tokens[Index] : Tokens[^1];
+        public SQLToken Peek(int offset = 1)
+        {
+            int index = Index + offset;
+
+            if (index < 0)
+                return Tokens[0];
+
+            if (index >= Tokens.Count)
+                return Tokens[^1];
+
+            return Tokens[index];
+        }
+        public SQLToken Consume() => Index < Tokens.Count ? Tokens[Index++] : Tokens[^1];
 
         public bool IsAtEnd => Index >= Tokens.Count;
-        public bool Expect(SQLToken current, SQLTokenType expectedToken)
-        {
-            return current.Type == expectedToken;
-        }
-        public bool Expects(SQLToken current, HashSet<SQLTokenType> expectedTokens)
-        {
-            return expectedTokens.Contains(current.Type);
-        }
+        public bool Expect(SQLToken current, SQLTokenType expectedToken) => current.Type == expectedToken;
+        public bool Expects(SQLToken current, HashSet<SQLTokenType> expectedTokens) => expectedTokens.Contains(current.Type);
+        public bool IsStringNullOrEmpty(string input) => string.IsNullOrWhiteSpace(input);
 
-        public bool IsStringNullOrEmpty(string input)
-        {
-            return string.IsNullOrWhiteSpace(input);
-        }
         public string CreateErrorMessage(string text, int errorIndexPos, string errorMessage, int errorTextLength = 1, int contextLength = 25)
         {
             errorTextLength = errorTextLength <= 0 ? 1 : errorTextLength;
@@ -191,30 +134,9 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 .Append(enclosing).Append('\n')
                 .Append(errorMessage).ToString();
         }
-        public bool IsQualifiedColumn(SQLToken currentToken, SQLToken tokenAfter)
-        {
-            return Expect(currentToken, SQLTokenType.Identifier) && Expect(tokenAfter, SQLTokenType.Dot);
-        }
-        public bool IsFunction(SQLToken currentToken, SQLToken tokenAfter)
-        {
-            return Expects(currentToken, SQLParserHelper.Identifiers) && Expect(tokenAfter, SQLTokenType.LeftParen);
-        }
         public bool IsKeyword(SQLToken token, string Keyword)
         {
             return Expect(token, SQLTokenType.Keyword) && string.Equals(token.Value, Keyword, StringComparison.InvariantCultureIgnoreCase);
-        }
-        public string? RemoveQuoteOrBracket(string input)
-        {
-            if (string.IsNullOrWhiteSpace(input)) return null;
-            var pattern = @"\[|\]|\""|\`|\'";
-            return Regex.Replace(input, pattern, "");
-        }
-        public string CleanAndValidate(string input, string message)
-        {
-            var result = RemoveQuoteOrBracket(input);
-            if (IsStringNullOrEmpty(result))
-                throw new InvalidDataException(message);
-            return result;
         }
         private (string Snippet, int Pointer, int Length, int Start, int End) GetContext(string text, int startIdx, int endIdx, int contextLength)
         {

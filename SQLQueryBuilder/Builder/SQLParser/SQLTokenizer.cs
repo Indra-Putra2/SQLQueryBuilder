@@ -22,6 +22,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
             "CREATE", "ALTER", "DROP", "TABLE", "VIEW", "INDEX",
             "LIMIT", "OFFSET", "DEFAULT",
             "ASC", "DESC",
+        };
+
+        private static readonly HashSet<string> _sqlCustomKeywords = new(StringComparer.OrdinalIgnoreCase)
+        {
             "TYPE",
         };
 
@@ -127,6 +131,8 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     else if (string.Equals(iden.clean, "FALSE", StringComparison.OrdinalIgnoreCase))
                         type = SQLTokenType.StringLiteral;
                     else if (_sqlKeywords.Contains(iden.clean))
+                        type = SQLTokenType.Keyword;
+                    else if (_sqlCustomKeywords.Contains(iden.clean))
                         type = SQLTokenType.Keyword;
                     else if (_sqlDataTypes.Contains(iden.clean))
                         type = SQLTokenType.SQLType;

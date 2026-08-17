@@ -7,7 +7,7 @@ namespace SQLQueryBuilder.Interface
 {
     public interface IQueryFrom
     {
-        IQuerySelect From<T>(string? tableAlias);
+        IQuerySelect From<T>(string tableAlias);
     }
 
     public interface IQuerySelect

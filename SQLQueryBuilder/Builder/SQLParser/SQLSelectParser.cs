@@ -26,7 +26,15 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             var expr = _expressionParser.Parse(_helper);
             var alias = ParseAlias();
-            selected.Add(new SelectExpression { Expression = expr, Alias = alias });
+            var lastStart = alias == null ? expr.Span.Start : alias.StartPosition;
+            var lastLength = alias == null ? expr.Span.Length : alias.RawLength;
+
+            selected.Add(new SelectExpression 
+            { 
+                Span = CreateSpan(expr.Span.Start, lastStart, lastLength),
+                Expression = expr, 
+                Alias = alias?.Value 
+            });
 
             while (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Comma))
             {
@@ -34,8 +42,15 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
                 expr = _expressionParser.Parse(_helper);
                 alias = ParseAlias();
+                lastStart = alias == null ? expr.Span.Start : alias.StartPosition;
+                lastLength = alias == null ? expr.Span.Length : alias.RawLength;
 
-                var select = new SelectExpression { Expression = expr, Alias = alias };
+                var select = new SelectExpression 
+                {
+                    Span = CreateSpan(expr.Span.Start, lastStart, lastLength),
+                    Expression = expr, 
+                    Alias = alias?.Value
+                };
 
                 selected.Add(select);
             }
@@ -54,7 +69,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             return selected;
         }
 
-        private string? ParseAlias()
+        private SQLToken? ParseAlias()
         {
             if (!_helper.IsAtEnd && _helper.Expects(_helper.Current, SQLParserHelper.DelimitersAndTerminators)) return null;
 
@@ -74,7 +89,17 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 throw new SyntaxErrorException(err);
             }
 
-            return _helper.Consume().Value; // Consume Alias
+            return _helper.Consume(); // Consume Alias
+        }
+
+        private SQLSourceSpan CreateSpan(int startPosition, int endStartPosition, int endLength)
+        {
+            int endPosition = endStartPosition + endLength;
+            return new SQLSourceSpan
+            {
+                Start = startPosition,
+                Length = endPosition - startPosition
+            };
         }
     }
 }
