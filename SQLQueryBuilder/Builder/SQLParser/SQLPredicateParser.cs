@@ -33,6 +33,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
         {
             return expr switch
             {
+                ParenthesizedExpression parenthesized => IsPredicate(parenthesized.Expression),
                 BinaryExpression binary
                     => IsPredicateBinary(binary),
 

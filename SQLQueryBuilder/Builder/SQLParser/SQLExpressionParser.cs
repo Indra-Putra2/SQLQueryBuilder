@@ -570,19 +570,32 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
         private SQLExpression ParseParenthesized()
         {
-            _helper.Consume(); // consume (
+            var startToken = _helper.Current;
 
-            var expr = ParseOR(); // parse everything inside
+            _helper.Consume(); // (
 
-            if (!_helper.IsAtEnd && !_helper.Expect(_helper.Current, SQLTokenType.RightParen))
+            var expr = ParseOR();
+
+            if (!_helper.IsAtEnd &&
+                !_helper.Expect(_helper.Current, SQLTokenType.RightParen))
             {
-                var err = _helper.CreateErrorMessage(_helper.Input, _helper.Current.StartPosition, $"Expected ')' at position {_helper.Current.StartPosition}", errorTextLength: _helper.Current.RawLength);
+                var err = _helper.CreateErrorMessage(
+                    _helper.Input,
+                    _helper.Current.StartPosition,
+                    $"Expected ')' at position {_helper.Current.StartPosition}",
+                    errorTextLength: _helper.Current.RawLength);
+
                 throw new SyntaxErrorException(err);
             }
 
-            _helper.Consume(); // consume )
+            var endToken = _helper.Current;
+            _helper.Consume(); // )
 
-            return expr;
+            return new ParenthesizedExpression
+            {
+                Span = CreateSpan(startToken.StartPosition, endToken.StartPosition, endToken.RawLength),
+                Expression = expr
+            };
         }
 
         private SQLExpression ParseIdentifierOrFunction()

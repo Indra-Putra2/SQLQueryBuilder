@@ -4,6 +4,7 @@ namespace SQLQueryBuilder.Model
 {
     public sealed class SQLQuery
     {
+        public Type OutputDTO { get; set; }
         public TableSource From { get; set; } = new();
         public List<SelectExpression> Select { get; set; } = new();
         public List<JoinSource> Joins { get; set; } = new();

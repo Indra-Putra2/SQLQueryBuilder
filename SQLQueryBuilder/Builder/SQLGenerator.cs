@@ -9,8 +9,9 @@ namespace SQLQueryBuilder.Builder
     {
         private readonly StringBuilder _query = new();
         private int _indent = 0;
-
-        public string BuildBaseQuery(SQLQuery sqlQuery)
+        private bool _baseQueryBuilt = false;
+        #region SQL Builder
+        public void BuildSelect(SQLQuery sqlQuery)
         {
             _query.Append("SELECT");
             _indent++;
@@ -24,40 +25,109 @@ namespace SQLQueryBuilder.Builder
             }
 
             _indent--;
+        }
+        public void BuildFrom(SQLQuery sqlQuery)
+        {
             NewLine();
             _query.Append("FROM ").Append(string.Join(".", sqlQuery.From.TableName));
             if (sqlQuery.From.Alias != null)
                 _query.Append($" AS {sqlQuery.From.Alias}");
-
-            if (sqlQuery.Joins.Count > 0)
-            {
-                foreach (var join in sqlQuery.Joins)
-                {
-                    string joinType = join.JoinType switch
-                    {
-                        SQLJoinType.INNER => $"INNER JOIN ",
-                        SQLJoinType.LEFT => $"LEFT JOIN ",
-                        SQLJoinType.RIGHT => $"RIGHT JOIN ",
-                        SQLJoinType.FULL => $"FULL JOIN ",
-                        _ => $"INNER JOIN "
-                    };
-
-                    NewLine();
-                    _query.Append(joinType);
-                    _query.Append(string.Join(".", join.Table.TableName));
-
-                    if (join.Table.Alias != null)
-                        _query.Append($" AS {join.Table.Alias}");
-
-                    _query.Append(" ON ");
-                    WriteExpression(join.Condition);
-                }
-            }
-            var query = _query.ToString();
-            _query.Clear();
-            return query;
         }
+        public void BuildJoins(SQLQuery sqlQuery)
+        {
+            if (sqlQuery.Joins.Count == 0) return;
 
+            foreach (var join in sqlQuery.Joins)
+            {
+                string joinType = join.JoinType switch
+                {
+                    SQLJoinType.INNER => $"INNER JOIN ",
+                    SQLJoinType.LEFT => $"LEFT JOIN ",
+                    SQLJoinType.RIGHT => $"RIGHT JOIN ",
+                    SQLJoinType.FULL => $"FULL JOIN ",
+                    _ => $"INNER JOIN "
+                };
+
+                NewLine();
+                _query.Append(joinType);
+                _query.Append(string.Join(".", join.Table.TableName));
+
+                if (join.Table.Alias != null)
+                    _query.Append($" AS {join.Table.Alias}");
+
+                _query.Append(" ON ");
+                WriteExpression(join.Condition);
+            }
+        }
+        public void BuildHaving(SQLQuery sqlQuery)
+        {
+            if (sqlQuery.Having == null) return;
+
+            NewLine();
+            _query.Append("HAVING ");
+            WriteExpression(sqlQuery.Having);
+        }
+        public void BuildWhere(SQLQuery sqlQuery)
+        {
+            if (sqlQuery.Where == null) return;
+
+            NewLine();
+            _query.Append("WHERE ");
+            WriteExpression(sqlQuery.Where);
+        }
+        public void BuildGroupBy(SQLQuery sqlQuery)
+        {
+            if (sqlQuery.GroupBy == null) return;
+
+            NewLine();
+            _query.Append("GROUP BY ");
+            for (int i = 0; i < sqlQuery.GroupBy.Count; i++)
+            {
+                if (i > 0)
+                    _query.Append(", ");
+
+                WriteExpression(sqlQuery.GroupBy[i]);
+            }
+        }
+        public void BuildOrderBy(SQLQuery sqlQuery)
+        {
+            if (sqlQuery.OrderBy == null) return;
+
+            NewLine();
+            _query.Append("ORDER BY ");
+            for (int i = 0; i < sqlQuery.OrderBy.Count; i++)
+            {
+                if (i > 0)
+                    _query.Append(", ");
+
+                WriteExpression(sqlQuery.OrderBy[i]);
+            }
+        }
+        public void BuildBaseQuery(SQLQuery sqlQuery)
+        {
+            _baseQueryBuilt = false;
+
+            BuildSelect(sqlQuery);
+            BuildFrom(sqlQuery);
+            BuildJoins(sqlQuery);
+
+            _baseQueryBuilt = true;
+        }
+        public string BuildCompleteQuery(SQLQuery sqlQuery)
+        {
+            if(_baseQueryBuilt == false) 
+                BuildBaseQuery(sqlQuery);
+
+            BuildWhere(sqlQuery);
+            BuildGroupBy(sqlQuery);
+            BuildHaving(sqlQuery);
+            BuildOrderBy(sqlQuery);
+
+            return _query.ToString();
+
+        }
+        #endregion
+        #region SQL Expression Writer
         private void WriteExpression(SQLExpression expression)
         {
             switch (expression)
@@ -114,18 +184,19 @@ namespace SQLQueryBuilder.Builder
                     WriteOrderByExpression(orderBy);
                     break;
 
+                case ParenthesizedExpression parenthesized:
+                    WriteParenthesized(parenthesized);
+                    break;
                 default:
                     throw new NotSupportedException(
                         $"SQL expression type '{expression.GetType().Name}' is not supported.");
             }
         }
-
         private void WriteColumn(ColumnExpression expression)
         {
             var table = expression.Table == null ? "" : string.Join(".", expression.Table);
             _query.Append(table).Append(".").Append(expression.Column);
         }
-
         private void WriteLiteral(LiteralExpression expression)
         {
             switch (expression.Type)
@@ -159,7 +230,6 @@ namespace SQLQueryBuilder.Builder
                     break;
             }
         }
-
         private void WriteBinary(BinaryExpression expression)
         {
             WriteExpression(expression.Left);
@@ -198,7 +268,6 @@ namespace SQLQueryBuilder.Builder
 
             WriteExpression(expression.Right);
         }
-
         private void WriteUnary(UnaryExpression expression)
         {
             var op = expression.Operator switch
@@ -215,7 +284,6 @@ namespace SQLQueryBuilder.Builder
 
             WriteExpression(expression.Operand);
         }
-
         private void WriteFunction(FunctionExpression expression)
         {
             _query.Append(expression.Name).Append("(");
@@ -230,7 +298,6 @@ namespace SQLQueryBuilder.Builder
 
             _query.Append(")");
         }
-
         private void WriteCase(CaseExpression expression)
         {
             _query.Append("CASE ");
@@ -265,17 +332,15 @@ namespace SQLQueryBuilder.Builder
             IndentedLine();
             _query.Append("END");
         }
-
         private void WriteWildcard(WildcardExpression expression)
         {
             if (expression.TableAlias != null)
             {
-                _query.Append(string.Join(".", expression.TableAlias));
+                _query.Append($"{expression.TableAlias[0]}.");
             }
 
             _query.Append("*");
         }
-
         private void WriteIsNull(IsNullExpression expression)
         {
             WriteExpression(expression.Operand);
@@ -286,7 +351,6 @@ namespace SQLQueryBuilder.Builder
 
             _query.Append(" NULL");
         }
-
         private void WriteLike(LikeExpression expression)
         {
             WriteExpression(expression.Operand);
@@ -297,7 +361,6 @@ namespace SQLQueryBuilder.Builder
 
             WriteExpression(expression.Pattern);
         }
-
         private void WriteIn(InExpression expression)
         {
             WriteExpression(expression.Operand);
@@ -323,7 +386,6 @@ namespace SQLQueryBuilder.Builder
                 _query.Append(")");
             }
         }
-
         private void WriteBetween(BetweenExpression expression)
         {
             WriteExpression(expression.Operand);
@@ -334,20 +396,12 @@ namespace SQLQueryBuilder.Builder
             _query.Append(" AND ");
             WriteExpression(expression.Upper);
         }
-
-        // Currently Unsupported
-        //private void WriteParameter(ParameterExpression expression)
-        //{
-        //    // TODO
-        //}
-
         private void WriteSelectExpression(SelectExpression expression)
         {
             WriteExpression(expression.Expression);
             if (expression.Alias != null)
                 _query.Append($" AS {expression.Alias}");
         }
-
         private void WriteOrderByExpression(OrderByExpression expression)
         {
             WriteExpression(expression.Expression);
@@ -356,15 +410,27 @@ namespace SQLQueryBuilder.Builder
             else
                 _query.Append(" ASC");
         }
-
+        private void WriteParenthesized(ParenthesizedExpression expression)
+        {
+            _query.Append("(");
+            WriteExpression(expression.Expression);
+            _query.Append(")");
+        }
+        #endregion
+        #region Helper
         private void NewLine()
         {
             _query.AppendLine();
         }
-
         private void IndentedLine()
         {
             _query.Append('\t', _indent);
         }
+        #endregion
+        // Currently Unsupported
+        //private void WriteParameter(ParameterExpression expression)
+        //{
+        //    // TODO
+        //}
     }
 }

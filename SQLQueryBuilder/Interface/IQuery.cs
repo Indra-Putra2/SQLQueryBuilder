@@ -21,7 +21,7 @@ namespace SQLQueryBuilder.Interface
         IQueryFilter GroupBy(string groupBy);
         IQueryFilter Having(string having);
         IQueryFilter Where(string where);
-        IQueryFilter Validate();
+        IQueryFilter ValidateBaseQuery();
         SQLQueryData Build();
     }
 

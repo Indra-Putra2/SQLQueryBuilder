@@ -101,12 +101,15 @@ namespace SQLQueryBuilder.Builder.SQLParser
             return Tokens[index];
         }
         public SQLToken Consume() => Index < Tokens.Count ? Tokens[Index++] : Tokens[^1];
-
         public bool IsAtEnd => Index >= Tokens.Count;
+
         public bool Expect(SQLToken current, SQLTokenType expectedToken) => current.Type == expectedToken;
         public bool Expects(SQLToken current, HashSet<SQLTokenType> expectedTokens) => expectedTokens.Contains(current.Type);
         public bool IsStringNullOrEmpty(string input) => string.IsNullOrWhiteSpace(input);
-
+        public bool IsKeyword(SQLToken token, string Keyword)
+        {
+            return Expect(token, SQLTokenType.Keyword) && string.Equals(token.Value, Keyword, StringComparison.InvariantCultureIgnoreCase);
+        }
         public string CreateErrorMessage(string text, int errorIndexPos, string errorMessage, int errorTextLength = 1, int contextLength = 25)
         {
             errorTextLength = errorTextLength <= 0 ? 1 : errorTextLength;
@@ -133,10 +136,6 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 .Append(pointer).Append('\n')
                 .Append(enclosing).Append('\n')
                 .Append(errorMessage).ToString();
-        }
-        public bool IsKeyword(SQLToken token, string Keyword)
-        {
-            return Expect(token, SQLTokenType.Keyword) && string.Equals(token.Value, Keyword, StringComparison.InvariantCultureIgnoreCase);
         }
         private (string Snippet, int Pointer, int Length, int Start, int End) GetContext(string text, int startIdx, int endIdx, int contextLength)
         {

@@ -77,6 +77,10 @@ namespace SQLQueryBuilder.Model.SQL_Expression
     {
         public string Name { get; init; } = string.Empty;
     }
+    public sealed class ParenthesizedExpression : SQLExpression
+    {
+        public SQLExpression Expression { get; init; }
+    }
     public sealed class SelectExpression : SQLExpression
     {
         public SQLExpression Expression { get; init; }

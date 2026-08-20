@@ -3,13 +3,13 @@ using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
 using System.Data;
 using System.Diagnostics;
-using System.Reflection;
 
 namespace SQLQueryBuilder.Builder.SQLParser
 {
     public class SQLSemanticValidator
     {
-        private Dictionary<string, Type> _aliases = new(StringComparer.InvariantCultureIgnoreCase);
+        private SQLTableManager _tableManager = new();
+        private SQLDTOManager _dtoManager = new();
         private SQLFunctionDefinition _sQLFunctionDefinitions = new SQLFunctionDefinition();
         private SQLValidationMode _mode;
 
@@ -27,6 +27,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
         public void ValidateBaseQuery(SQLQuery query)
         {
+            _dtoManager.RegisterDTO(query.OutputDTO);
             ValidateFrom(query.From);
             ValidateJoins(query.Joins);
             ValidateSelect(query.Select);
@@ -34,7 +35,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
         public void ValidateFilter(SQLQuery query)
         {
-            ValidateHaving(query.Having);
+            ValidateHaving(query.Having, query.GroupBy);
             ValidateWhere(query.Where);
             ValidateGroupBy(query.GroupBy);
             ValidateOrderBy(query.OrderBy);
@@ -48,14 +49,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     "FROM table name cannot be empty.");
             }
 
-            AddAlias(from.Alias, from.Type);
-        }
-        private void ValidateSelect(List<SelectExpression> select)
-        {
-            foreach (var selected in select)
-            {
-                AnalyzeExpression(selected);
-            }
+            _tableManager.RegisterTable(from.Alias, from.Type);
         }
 
         private void ValidateJoins(List<JoinSource> joins)
@@ -75,8 +69,15 @@ namespace SQLQueryBuilder.Builder.SQLParser
                         $"Join table name cannot be empty for {table.Type.Name}.");
                 }
 
-                AddAlias(table.Alias, table.Type);
+                _tableManager.RegisterTable(join.Table.Alias, join.Table.Type);
                 AnalyzeExpression(join.Condition);
+            }
+        }
+        private void ValidateSelect(List<SelectExpression> select)
+        {
+            foreach (var selected in select)
+            {
+                AnalyzeExpression(selected);
             }
         }
 
@@ -86,10 +87,18 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 AnalyzeExpression(where);
         }
 
-        private void ValidateHaving(SQLExpression? having)
+        private void ValidateHaving(SQLExpression? having, List<SQLExpression> groupBy)
         {
-            if (having != null)
-                AnalyzeExpression(having);
+            if (having == null)
+                return;
+
+            if (groupBy == null || groupBy.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "A HAVING clause cannot be used without a GROUP BY clause.");
+            }
+
+            AnalyzeExpression(having);
         }
 
         private void ValidateGroupBy(List<SQLExpression>? groupBy)
@@ -121,8 +130,9 @@ namespace SQLQueryBuilder.Builder.SQLParser
         {
             return expression switch
             {
-                SelectExpression select => AnalyzeExpression(select.Expression),
+                SelectExpression select => AnalyzeSelect(select),
                 OrderByExpression orderBy => AnalyzeExpression(orderBy.Expression),
+                ParenthesizedExpression parenthesized => AnalyzeExpression(parenthesized.Expression),
 
                 BinaryExpression binary => AnalyzeBinary(binary),
                 UnaryExpression unary => AnalyzeUnary(unary),
@@ -141,6 +151,13 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
                 _ => throw new NotSupportedException($"Expression '{expression.GetType().Name}' is not supported.")
             };
+        }
+        private SQLExpressionMetadata AnalyzeSelect(SelectExpression select)
+        {
+            var metadata = AnalyzeExpression(select.Expression);
+            RegisterSelectOutput(select);
+
+            return metadata;
         }
         private SQLExpressionMetadata AnalyzeFunction(FunctionExpression function)
         {
@@ -923,16 +940,6 @@ namespace SQLQueryBuilder.Builder.SQLParser
                         $"Invalid column reference '{string.Join(".", wildcard.TableAlias)}.*'. " +
                         "Only a single table alias is supported.");
                 }
-
-                var type = ResolveAlias(wildcard.TableAlias[0]);
-
-                return new SQLExpressionMetadata
-                {
-                    Type = SQLExpressionType.Unknown,
-                    IsWildcard = true,
-                    IsNullable = false,
-                    IsConstant = false
-                };
             }
 
             return new SQLExpressionMetadata
@@ -946,7 +953,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
         private SQLExpressionMetadata AnalyzeColumn(ColumnExpression column)
         {
             if (column.Table == null)
-                throw new ArgumentNullException($"must provide alias for resolving alias!");
+                throw new ArgumentNullException($"Column must be a qualified column name!");
 
             if (column.Table.Count > 1)
             {
@@ -955,100 +962,55 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     "Only a single table alias is supported.");
             }
 
-            var type = ResolveAlias(column.Table[0]);
-            var prop = type.GetProperty(column.Column, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-
-            if (prop == null)
-                throw new SyntaxErrorException($"column with the name '{column.Column}' cannot be found!");
-
-            var mappedType = MapType(prop.PropertyType);
+            var metadata = _tableManager.GetColumnMetadata(column.Table[0], column.Column);
 
             return new SQLExpressionMetadata
             {
                 IsConstant = false,
-                IsNullable = IsNullable(prop),
-                Type = mappedType,
+                IsNullable = metadata.IsNullable,
+                Type = metadata.ExpressionType,
             };
         }
         #endregion
-
-        #region Helper
-        private void AddAlias(string alias, Type type)
+        private void RegisterSelectOutput(SelectExpression select)
         {
-            if (type == null)
-                throw new ArgumentNullException(nameof(type));
-
-            if (string.IsNullOrWhiteSpace(alias))
-                throw new ArgumentNullException($"Table alias for type {type.FullName} cannot be empty or null! ");
-
-            if (_aliases.ContainsKey(alias))
+            if (select.Alias != null)
             {
-                throw new InvalidOperationException($"Table alias '{alias}' already exists!");
+                _dtoManager.RegisterOutput(select.Alias);
+                return;
             }
 
-            _aliases[alias] = type;
-        }
-        private Type ResolveAlias(string alias)
-        {
-            if (string.IsNullOrWhiteSpace(alias))
-                throw new ArgumentNullException($"must provide alias for resolving alias!");
-
-            if (_aliases.TryGetValue(alias, out var type))
+            if (select.Expression is ColumnExpression column)
             {
-                return type;
+                _dtoManager.RegisterOutput(column.Column);
+                return;
             }
 
-            throw new InvalidOperationException($"Table alias '{alias}' doesn't exists!");
+            if (select.Expression is WildcardExpression wildcard)
+            {
+                if (wildcard.TableAlias != null)
+                {
+                    var columns = _tableManager.GetTableColumns(wildcard.TableAlias[0]);
+
+                    foreach (var c in columns)
+                        _dtoManager.RegisterOutput(c.Key);
+                }
+                else
+                {
+                    var tables = _tableManager.GetAllTables();
+
+                    foreach (var table in tables.Values)
+                    {
+                        foreach (var c in table)
+                            _dtoManager.RegisterOutput(c.Key);
+                    }
+                }
+                return;
+            }
+
+            throw new SyntaxErrorException(
+                $"A non-column SELECT expression must have an alias.");
         }
-        private SQLExpressionType MapType(Type type)
-        {
-            type = Nullable.GetUnderlyingType(type) ?? type;
-
-            if (type == typeof(char))
-                return SQLExpressionType.String;
-
-            else if (type == typeof(string))
-                return SQLExpressionType.String;
-
-            else if (type == typeof(bool))
-                return SQLExpressionType.Boolean;
-
-            else if (type == typeof(DateTime) || type == typeof(DateTimeOffset))
-                return SQLExpressionType.DateTime;
-
-            else if (type == typeof(Guid))
-                return SQLExpressionType.Guid;
-
-            else if (type == typeof(byte[]))
-                return SQLExpressionType.Number;
-
-            else if (type == typeof(short))
-                return SQLExpressionType.Number;
-
-            else if (type == typeof(int))
-                return SQLExpressionType.Number;
-
-            else if (type == typeof(long))
-                return SQLExpressionType.Number;
-
-            else if (type == typeof(float))
-                return SQLExpressionType.Number;
-
-            else if (type == typeof(double))
-                return SQLExpressionType.Number;
-
-            else if (type == typeof(decimal))
-                return SQLExpressionType.Number;
-
-            return SQLExpressionType.Unknown;
-        }
-        private bool IsNullable(PropertyInfo prop)
-        {
-            var nullabilityContext = new NullabilityInfoContext();
-            var nullability = nullabilityContext.Create(prop);
-            return nullability.ReadState == NullabilityState.Nullable;
-        }
-        #endregion
 
         #region Testing
         public SQLExpressionMetadata DebugAnalyzeExpression(SQLExpression expression)
@@ -1056,46 +1018,16 @@ namespace SQLQueryBuilder.Builder.SQLParser
             return AnalyzeExpression(expression);
         }
 
-        public SQLExpressionMetadata DebugAnalyzeColumnExpression(TableSource tableSource, SQLExpression expression)
+        #region Testing Helper Seeds
+        public void SeedTable(string tableAlias, Type dtoType)
         {
-            ValidateFrom(tableSource);
-            return AnalyzeExpression(expression);
+            _tableManager.RegisterTable(tableAlias, dtoType);
         }
-
-        public SQLExpressionMetadata DebugAnalyzeWildcardExpression(TableSource tableSource, SQLExpression expression)
+        public void SeedDTO(Type dtoType)
         {
-            ValidateFrom(tableSource);
-            return AnalyzeExpression(expression);
+            _dtoManager.RegisterDTO(dtoType);
         }
-
-        public SQLExpressionMetadata DebugAnalyzeFunctionExpression(TableSource tableSource, SQLExpression expression)
-        {
-            ValidateFrom(tableSource);
-            return AnalyzeExpression(expression);
-        }
-        public SQLExpressionMetadata DebugAnalyzeCASEExpression(TableSource tableSource, SQLExpression expression)
-        {
-            ValidateFrom(tableSource);
-            return AnalyzeExpression(expression);
-        }
-
-        public SQLExpressionMetadata DebugAnalyzeUnaryExpression(TableSource tableSource, SQLExpression expression)
-        {
-            ValidateFrom(tableSource);
-            return AnalyzeExpression(expression);
-        }
-        public SQLExpressionMetadata DebugAnalyzeBinaryExpression(TableSource tableSource, SQLExpression expression)
-        {
-            ValidateFrom(tableSource);
-            return AnalyzeExpression(expression);
-        }
-
-        public (string Alias, Type type) DebugValidateFromSource(TableSource tableSource)
-        {
-            ValidateFrom(tableSource);
-            _aliases.TryGetValue(tableSource.Alias, out var aliasType);
-            return (tableSource.Alias, aliasType);
-        }
+        #endregion
         #endregion
     }
 }
