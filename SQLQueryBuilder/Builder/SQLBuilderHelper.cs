@@ -17,53 +17,39 @@ namespace SQLQueryBuilder.Builder
         private SQLFromParser _fromParser = new SQLFromParser();
         private SQLParserHelper _helper;
 
-        public List<SQLToken> BuildTokens(string input)
+        public SQLQueryContext BuildTokens(string input)
         {
             return _tokenizer.Tokenize(input);
         }
 
-        public SQLExpression BuildExpression(string input, bool validateEnd = true)
+        public SQLExpression BuildExpression(string input, bool validateEnd = false)
         {
-            _helper = new SQLParserHelper(input, BuildTokens(input));
-            var expr = _expressionParser.Parse(_helper);
-
-            if (validateEnd && !_helper.Expect(_helper.Current, SQLTokenType.EOF))
-            {
-                var err = _helper.CreateErrorMessage(
-                    _helper.Input,
-                    _helper.Current.StartPosition,
-                    $"Unexpected token '{_helper.Current.Value}' after end of expression.",
-                    errorTextLength: _helper.Current.RawLength);
-
-                throw new SyntaxErrorException(err);
-            }
-
-            return expr;
+            return _expressionParser.Parse(BuildTokens(input), validateEnd);
         }
 
         public List<SelectExpression> BuildSelect(string input)
         {
-            return _selectParser.Parse(input, BuildTokens(input));
+            return _selectParser.Parse(BuildTokens(input));
         }
 
         public SQLExpression BuildPredicate(string input)
         {
-            return _predicateParser.Parse(input, BuildTokens(input));
+            return _predicateParser.Parse(BuildTokens(input));
         }
 
         public List<SQLExpression> BuildGroupBy(string input)
         {
-            return _groupByParser.Parse(input, BuildTokens(input));
+            return _groupByParser.Parse(BuildTokens(input));
         }
 
         public List<OrderByExpression> BuildOrderBy(string input)
         {
-            return _orderByParser.Parse(input, BuildTokens(input));
+            return _orderByParser.Parse(BuildTokens(input));
         }
 
         public List<string> BuildFrom(string input)
         {
-            return _fromParser.Parse(input, BuildTokens(input));
+            return _fromParser.Parse(BuildTokens(input));
         }
     }
 }

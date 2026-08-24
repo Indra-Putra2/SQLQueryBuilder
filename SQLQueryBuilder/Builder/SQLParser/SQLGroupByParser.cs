@@ -9,18 +9,18 @@ namespace SQLQueryBuilder.Builder.SQLParser
     {
         private SQLParserHelper _helper;
         private SQLExpressionParser _expressionParser = new();
-        public List<SQLExpression> Parse(string input, List<SQLToken> tokens)
+        public List<SQLExpression> Parse(SQLQueryContext context)
         {
-            _helper = new SQLParserHelper(input, tokens);
+            _helper = new SQLParserHelper(context);
             var selected = new List<SQLExpression>();
 
             if (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Comma))
             {
-                var err = _helper.CreateErrorMessage(
+                var err = ErrorFormatter.Create(
                     _helper.Input,
                     _helper.Current.StartPosition,
-                    $"Expected Expression but got '{_helper.Current.Value}'",
-                    errorTextLength: _helper.Current.RawLength);
+                    $"Expected Expression but got '{_helper.GetSlice(_helper.Current)}'",
+                    errorTextLength: _helper.Current.Length);
                 throw new SyntaxErrorException(err);
             }
 
@@ -35,11 +35,11 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             if (!_helper.Expect(_helper.Current, SQLTokenType.EOF))
             {
-                var err = _helper.CreateErrorMessage(
+                var err = ErrorFormatter.Create(
                     _helper.Input,
                     _helper.Current.StartPosition,
-                    $"Unexpected token '{_helper.Current.Value}' after end of expression.",
-                    errorTextLength: _helper.Current.RawLength);
+                    $"Unexpected token '{_helper.GetSlice(_helper.Current)}' after end of expression.",
+                    errorTextLength: _helper.Current.Length);
 
                 throw new SyntaxErrorException(err);
             }

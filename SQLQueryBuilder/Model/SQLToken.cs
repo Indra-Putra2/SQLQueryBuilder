@@ -2,12 +2,9 @@
 
 namespace SQLQueryBuilder.Model
 {
-    public record SQLToken(
+    public readonly record struct SQLToken(
         SQLTokenType Type,
-        string RawText,
-        string Value,
         int StartPosition,
-        int RawLength,
-        int CleanLength
+        int Length
     );
 }

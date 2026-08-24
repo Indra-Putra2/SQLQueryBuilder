@@ -1,16 +1,16 @@
-﻿using SQLQueryBuilder.SQLEnum;
-using SQLQueryBuilder.Model;
-using System.Text;
+﻿using SQLQueryBuilder.Model;
+using SQLQueryBuilder.SQLEnum;
+using System.Collections.Frozen;
 
 namespace SQLQueryBuilder.Builder.SQLParser
 {
     internal class SQLTokenizer
     {
-        private List<SQLToken> _tokens = new();
-        private string _input = string.Empty;
+        private List<SQLToken> _tokens;
+        private string _input;
         private int _index = 0;
 
-        private static readonly HashSet<string> _sqlKeywords = new(StringComparer.OrdinalIgnoreCase)
+        private static readonly FrozenSet<string>.AlternateLookup<ReadOnlySpan<char>> _sqlKeywords = new[]
         {
             "SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE",
             "INTO", "VALUES", "SET",
@@ -21,28 +21,35 @@ namespace SQLQueryBuilder.Builder.SQLParser
             "CASE", "WHEN", "THEN", "ELSE", "END",
             "CREATE", "ALTER", "DROP", "TABLE", "VIEW", "INDEX",
             "LIMIT", "OFFSET", "DEFAULT",
-            "ASC", "DESC",
-        };
+            "ASC", "DESC"
+        }.ToFrozenSet(StringComparer.OrdinalIgnoreCase).GetAlternateLookup<ReadOnlySpan<char>>();
 
-        private static readonly HashSet<string> _sqlCustomKeywords = new(StringComparer.OrdinalIgnoreCase)
+        private static readonly FrozenSet<string>.AlternateLookup<ReadOnlySpan<char>> _sqlCustomKeywords = new[]
         {
-            "TYPE",
-        };
+            "TYPE"
+         }.ToFrozenSet(StringComparer.OrdinalIgnoreCase).GetAlternateLookup<ReadOnlySpan<char>>();
 
-        private static readonly HashSet<string> _sqlDataTypes = new(StringComparer.OrdinalIgnoreCase)
+        private static readonly FrozenSet<string>.AlternateLookup<ReadOnlySpan<char>> _sqlDataTypes = new[]
         {
-            "NUMBER", "STRING", "BOOL",
-            "DATETIME",
-            "BINARY",
-            "GUID"
-        };
+            "NUMBER", "STRING", "BOOL", "DATETIME", "BINARY", "GUID"
+        }.ToFrozenSet(StringComparer.OrdinalIgnoreCase).GetAlternateLookup<ReadOnlySpan<char>>();
 
         private char Current => _index < _input.Length ? _input[_index] : '\0';
-        private char Peek(int offset = 1) => _index + offset < _input.Length ? _input[_index + offset] : '\0';
+        private char Peek(int offset = 1)
+        {
+            var index = _index + offset;
 
+            if (index < 0)
+                return _input[0];
+
+            if (index < _input.Length)
+                return _input[index];
+
+            return '\0';
+        }
         private char Consume() => _index < _input.Length ? _input[_index++] : '\0';
 
-        public List<SQLToken> Tokenize(string sqlQuery)
+        public SQLQueryContext Tokenize(string sqlQuery)
         {
             if (string.IsNullOrWhiteSpace(sqlQuery))
                 throw new ArgumentNullException(nameof(sqlQuery), "Query string cannot be null or empty!");
@@ -78,151 +85,136 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 if (char.IsDigit(c) || (c == '.' && char.IsDigit(Peek())))
                 {
                     if (c == '0' && (Peek() == 'x' || Peek() == 'X'))
-                    {
-                        AddToken(SQLTokenType.HexLiteral, ParseHex);
-                    }
+                        ParseHex();
                     else
-                    {
-                        var num = ParseNumber();
-
-                        if (num.raw.Contains('e') || num.raw.Contains('E'))
-                        {
-                            AddToken(SQLTokenType.ScientificLiteral, () => num.raw.ToString());
-                        }
-                        else if (num.raw.Contains('.'))
-                        {
-                            AddToken(SQLTokenType.DecimalLiteral, () => num.raw.ToString());
-                        }
-                        else
-                        {
-                            AddToken(SQLTokenType.IntegerLiteral, () => num.raw.ToString());
-                        }
-                    }
+                        ParseNumber();
                 }
                 // Unicode Strings (e.g. N'text')
                 else if ((c == 'N' || c == 'n') && Peek() == '\'')
                 {
-                    AddToken(SQLTokenType.UnicodeString, ParseUnicode);
+                    ParseString();
                 }
                 // Datetime Literals (e.g. d'2020-07-01')
                 else if ((c == 'D' || c == 'd') && Peek() == '\'')
                 {
-                    AddToken(SQLTokenType.DatetimeLiteral, ParseDatetime);
+                    ParseString();
                 }
                 // Variables (@var or @@var)
                 else if (c == '@')
                 {
-                    AddToken(SQLTokenType.Variable, ParseVariable);
+                    ParseIdentifierOrKeyword();
                 }
                 // Money Literals ($100)
                 else if (c == '$' && char.IsDigit(Peek()))
                 {
-                    AddToken(SQLTokenType.MoneyLiteral, ParseMoney);
+                    ParseNumber();
                 }
                 // Regular Identifiers OR Keywords OR NULL
                 else if (char.IsLetter(c) || c == '_')
                 {
-                    var start = _index;
-                    var iden = ParseIdentifierOrKeyword();
-                    SQLTokenType type;
-
-                    if (string.Equals(iden.clean, "NULL", StringComparison.OrdinalIgnoreCase))
-                        type = SQLTokenType.NullLiteral;
-                    else if (string.Equals(iden.clean, "FALSE", StringComparison.OrdinalIgnoreCase))
-                        type = SQLTokenType.StringLiteral;
-                    else if (_sqlKeywords.Contains(iden.clean))
-                        type = SQLTokenType.Keyword;
-                    else if (_sqlCustomKeywords.Contains(iden.clean))
-                        type = SQLTokenType.Keyword;
-                    else if (_sqlDataTypes.Contains(iden.clean))
-                        type = SQLTokenType.SQLType;
-                    else
-                        type = SQLTokenType.Identifier;
-
-                    _tokens.Add(new SQLToken(type, iden.raw, iden.clean, start, iden.raw.Length, iden.clean.Length));
+                    ParseIdentifierOrKeyword();
                 }
                 // Quoted Identifiers
-                else if (c == '[') AddToken(SQLTokenType.BracketIdentifier, () => ParseQuotedIdentifier(']'));
-                else if (c == '"') AddToken(SQLTokenType.DoubleQuoteIdentifier, () => ParseQuotedIdentifier('"'));
+                else if (c == '[') ParseDelimitedIdentifier(']');
+                else if (c == '"') ParseDelimitedIdentifier('"');
                 // Standard Strings
-                else if (c == '\'') AddToken(SQLTokenType.StringLiteral, ParseString);
+                else if (c == '\'') ParseString();
                 // Single-Character Operators & Punctuation
-                else if (c == '.') AddToken(SQLTokenType.Dot, () => Consume().ToString());
-                else if (c == ',') AddToken(SQLTokenType.Comma, () => Consume().ToString());
-                else if (c == ';') AddToken(SQLTokenType.Semicolon, () => Consume().ToString());
-                else if (c == '(') AddToken(SQLTokenType.LeftParen, () => Consume().ToString());
-                else if (c == ')') AddToken(SQLTokenType.RightParen, () => Consume().ToString());
-                else if (c == '=') AddToken(SQLTokenType.Equal, () => Consume().ToString());
+                else if (c == '.') ConsumeAndAddToken(SQLTokenType.Dot, 1);
+                else if (c == ',') ConsumeAndAddToken(SQLTokenType.Comma, 1);
+                else if (c == ';') ConsumeAndAddToken(SQLTokenType.Semicolon, 1);
+                else if (c == '(') ConsumeAndAddToken(SQLTokenType.LeftParen, 1);
+                else if (c == ')') ConsumeAndAddToken(SQLTokenType.RightParen, 1);
+                else if (c == '=') ConsumeAndAddToken(SQLTokenType.Equal, 1);
 
                 // Multi-Character Operators & Punctuation & Bitwise
                 else if (c == ':')
                 {
-                    if(Peek() == ':') AddToken(SQLTokenType.ScopeResolution, () => $"{Consume()}{Consume()}");
-                    else AddToken(SQLTokenType.Unknown, () => Consume().ToString());
+                    if (Peek() == ':')
+                        ConsumeAndAddToken(SQLTokenType.ScopeResolution, 2);
+                    else
+                        ConsumeAndAddToken(SQLTokenType.Unknown, 1);
                 }
                 else if (c == '+')
                 {
-                    if (Peek() == '=') AddToken(SQLTokenType.PlusEquals, () => $"{Consume()}{Consume()}");
-                    else AddToken(SQLTokenType.Plus, () => Consume().ToString());
+                    if (Peek() == '=')
+                        ConsumeAndAddToken(SQLTokenType.PlusEquals, 2);
+                    else
+                        ConsumeAndAddToken(SQLTokenType.Plus, 1);
                 }
                 else if (c == '-')
                 {
-                    if (Peek() == '=') AddToken(SQLTokenType.MinusEquals, () => $"{Consume()}{Consume()}");
-                    else AddToken(SQLTokenType.Minus, () => Consume().ToString());
+                    if (Peek() == '=')
+                        ConsumeAndAddToken(SQLTokenType.MinusEquals, 2);
+                    else
+                        ConsumeAndAddToken(SQLTokenType.Minus, 1);
                 }
                 else if (c == '/')
                 {
-                    if (Peek() == '=') AddToken(SQLTokenType.DivideEquals, () => $"{Consume()}{Consume()}");
-                    else AddToken(SQLTokenType.Divide, () => Consume().ToString());
+                    if (Peek() == '=')
+                        ConsumeAndAddToken(SQLTokenType.DivideEquals, 2);
+                    else
+                        ConsumeAndAddToken(SQLTokenType.Divide, 1);
                 }
                 else if (c == '*')
                 {
-                    if (Peek() == '=') AddToken(SQLTokenType.MultiplyEquals, () => $"{Consume()}{Consume()}");
-                    else AddToken(SQLTokenType.Asterisk, () => Consume().ToString());
+                    if (Peek() == '=')
+                        ConsumeAndAddToken(SQLTokenType.MultiplyEquals, 2);
+                    else
+                        ConsumeAndAddToken(SQLTokenType.Asterisk, 1);
                 }
                 else if (c == '%')
                 {
-                    if (Peek() == '=') AddToken(SQLTokenType.ModuloEquals, () => $"{Consume()}{Consume()}");
-                    else AddToken(SQLTokenType.Modulo, () => Consume().ToString());
+                    if (Peek() == '=')
+                        ConsumeAndAddToken(SQLTokenType.ModuloEquals, 2);
+                    else
+                        ConsumeAndAddToken(SQLTokenType.Modulo, 1);
                 }
-                
+
                 else if (c == '<')
                 {
-                    if (Peek() == '=') AddToken(SQLTokenType.LessThanOrEqual, () => $"{Consume()}{Consume()}");
-                    else if (Peek() == '>') AddToken(SQLTokenType.NotEqual, () => $"{Consume()}{Consume()}");
-                    else if (Peek() == '<') AddToken(SQLTokenType.BitwiseLeftShift, () => $"{Consume()}{Consume()}");
-                    else AddToken(SQLTokenType.LessThan, () => Consume().ToString());
+                    if (Peek() == '=')
+                        ConsumeAndAddToken(SQLTokenType.LessThanOrEqual, 2);
+                    else if (Peek() == '>')
+                        ConsumeAndAddToken(SQLTokenType.NotEqual, 2);
+                    else if (Peek() == '<')
+                        ConsumeAndAddToken(SQLTokenType.BitwiseLeftShift, 2);
+                    else
+                        ConsumeAndAddToken(SQLTokenType.LessThan, 1);
                 }
                 else if (c == '>')
                 {
-                    if (Peek() == '=') AddToken(SQLTokenType.GreaterThanOrEqual, () => $"{Consume()}{Consume()}");
-                    else if (Peek() == '>') AddToken(SQLTokenType.BitwiseRightShift, () => $"{Consume()}{Consume()}");
-                    else AddToken(SQLTokenType.GreaterThan, () => Consume().ToString());
+                    if (Peek() == '=')
+                        ConsumeAndAddToken(SQLTokenType.GreaterThanOrEqual, 2);
+                    else if (Peek() == '>')
+                        ConsumeAndAddToken(SQLTokenType.BitwiseRightShift, 2);
+                    else
+                        ConsumeAndAddToken(SQLTokenType.GreaterThan, 1);
                 }
                 else if (c == '!')
                 {
-                    if (Peek() == '=') AddToken(SQLTokenType.NotEqual, () => $"{Consume()}{Consume()}");
-                    else AddToken(SQLTokenType.Unknown, () => Consume().ToString());
+                    if (Peek() == '=') ConsumeAndAddToken(SQLTokenType.NotEqual, 2);
+                    else ConsumeAndAddToken(SQLTokenType.Unknown, 1);
                 }
 
                 // Bitwise Operator
-                else if (c == '~') AddToken(SQLTokenType.BitwiseNot, () => Consume().ToString());
-                else if (c == '&') AddToken(SQLTokenType.BitwiseAnd, () => Consume().ToString());
-                else if (c == '|') AddToken(SQLTokenType.BitwiseOr, () => Consume().ToString());
-                else if (c == '^') AddToken(SQLTokenType.BitwiseXor, () => Consume().ToString());
+                else if (c == '~') ConsumeAndAddToken(SQLTokenType.BitwiseNot, 1);
+                else if (c == '&') ConsumeAndAddToken(SQLTokenType.BitwiseAnd, 1);
+                else if (c == '|') ConsumeAndAddToken(SQLTokenType.BitwiseOr, 1);
+                else if (c == '^') ConsumeAndAddToken(SQLTokenType.BitwiseXor, 1);
 
                 else
                 {
-                    AddToken(SQLTokenType.Unknown, () => Consume().ToString());
+                    ConsumeAndAddToken(SQLTokenType.Unknown, 1);
                 }
             }
 
-            _tokens.Add(new SQLToken(SQLTokenType.EOF, "", "EOF", _input.Length, 0,0));
-            return _tokens;
+            _tokens.Add(new SQLToken(SQLTokenType.EOF, _input.Length, 0));
+
+            return new SQLQueryContext(sqlQuery, _tokens);
         }
 
         #region Helper Parsing Methods
-
         private void SkipSingleLineComment()
         {
             while (Current != '\0' && Current != '\n' && Current != '\r')
@@ -230,93 +222,71 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 Consume();
             }
         }
-
         private void SkipMultiLineComment()
         {
+            var start = _index;
+
             Consume(); // Consume '/'
             Consume(); // Consume '*'
+
             while (Current != '\0')
             {
                 if (Current == '*' && Peek() == '/')
                 {
                     Consume(); // Consume '*'
                     Consume(); // Consume '/'
-                    break;
+                    return;
                 }
                 Consume();
             }
+
+            throw new FormatException(
+            ErrorFormatter.Create(
+                _input,
+                start,
+                "Unterminated multi-line comment!"));
         }
-
-        private (string raw, string clean) ParseVariable()
+        private void ParseHex()
         {
-            var clean = new StringBuilder();
-            var raw = new StringBuilder();
+            var start = _index;
 
-            raw.Append(Consume()); // Consume @
-            if (Current == '@')
-            {
-                raw.Append(Consume()); // Consume second @
-            }
-            var iden = ParseIdentifierOrKeyword();
-            raw.Append(iden.raw);
-            clean.Append(iden.clean);
+            Consume(); // Consume 0
+            Consume(); // Consume x
 
-            return (raw.ToString(), clean.ToString());
-        }
+            var digitStart = _index;
 
-        private (string raw, string clean) ParseMoney()
-        {
-            var clean = new StringBuilder();
-            var raw = new StringBuilder();
-            raw.Append(Consume()); // Consume $
-            var num = ParseNumber();
-            raw.Append(num.raw);
-            clean.Append(num.clean);
-            return (raw.ToString(), clean.ToString());
-        }
-
-        private (string raw, string clean) ParseUnicode()
-        {
-            var clean = new StringBuilder();
-            var raw = new StringBuilder();
-            raw.Append(Consume()); // Consume N/n
-            var str = ParseString();
-            raw.Append(str.raw);
-            clean.Append(str.clean);
-            return (raw.ToString(), clean.ToString());
-        }
-        private (string raw, string clean) ParseDatetime()
-        {
-            var clean = new StringBuilder();
-            var raw = new StringBuilder();
-            raw.Append(Consume()); // Consume D/d
-            var str = ParseString();
-            raw.Append(str.raw);
-            clean.Append(str.clean);
-            return (raw.ToString(), clean.ToString());
-        }
-
-        private (string raw, string clean) ParseHex()
-        {
-            var clean = new StringBuilder();
-            var raw = new StringBuilder();
-            raw.Append(Consume()); // Consume 0
-            raw.Append(Consume()); // Consume x
             while (Current != '\0' && IsHexDigit(Current))
-            {
-                var current = Consume();
-                raw.Append(current);
-                clean.Append(current);
-            }
-            return (raw.ToString(), clean.ToString());
-        }
+                Consume();
 
-        private (string raw, string clean) ParseString()
+            if (_index == digitStart)
+            {
+                var num = _input.Substring(start, _index - start);
+                throw new FormatException(
+                    ErrorFormatter.Create(
+                        _input,
+                        _index,
+                        $"Hex literal requires digits '{num}'"));
+            }
+
+            AddToken(SQLTokenType.HexLiteral, start);
+        }
+        private void ParseString()
         {
-            var clean = new StringBuilder();
-            var raw = new StringBuilder();
-            int startIndex = _index;
-            raw.Append(Consume()); // Open single quote
+            int start = _index;
+            SQLTokenType type = SQLTokenType.StringLiteral;
+
+            if (Current == 'd' || Current == 'D')
+            {
+                Consume(); // Consume d/D
+                type = SQLTokenType.DatetimeLiteral;
+            }
+            else if (Current == 'n' || Current == 'N')
+            {
+                Consume(); // Consume d/D
+                type = SQLTokenType.UnicodeString;
+            }
+
+            Consume(); // Consume opening quote
 
             while (Current != '\0')
             {
@@ -324,31 +294,25 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 {
                     if (Peek() == '\'')
                     {
-                        var firstQuote = Consume();
-                        raw.Append(firstQuote);
-                        clean.Append(firstQuote);
+                        Consume(); // First quote
+                        Consume(); // Second quote
 
-                        raw.Append(Consume());
                         continue;
                     }
 
-                    raw.Append(Consume()); // Close quote
-                    return (raw.ToString(), clean.ToString());
+                    Consume(); // Close quote
+                    AddToken(type, start);
+                    return;
                 }
-                var current = Consume();
-                raw.Append(current);
-                clean.Append(current);
+                Consume();
             }
 
-            throw new FormatException(CreateErrorMessage(_input, startIndex, "Unterminated string literal!"));
+            throw new FormatException(ErrorFormatter.Create(_input, _index, "Unterminated string literal!"));
         }
-
-        private (string raw, string clean) ParseQuotedIdentifier(char closingChar)
+        private void ParseDelimitedIdentifier(char closingChar)
         {
-            var clean = new StringBuilder();
-            var raw = new StringBuilder();
-            int startIndex = _index;
-            raw.Append(Consume()); // Open bracket/quote
+            int start = _index;
+            Consume(); // Opening quote/bracket
 
             while (Current != '\0')
             {
@@ -356,36 +320,41 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 {
                     if (Peek() == closingChar)
                     {
-                        var firstQuote = Consume();
-                        raw.Append(firstQuote);
-                        clean.Append(firstQuote);
-
-                        raw.Append(Consume());
+                        Consume(); // First quote/bracket
+                        Consume(); // Second quote/bracket
                         continue;
                     }
 
-                    raw.Append(Consume()); // Close bracket/quote
-                    return (raw.ToString(), clean.ToString());
+                    Consume(); // Close quote/bracket
+                    AddToken(
+                        closingChar == ']'
+                            ? SQLTokenType.BracketIdentifier
+                            : SQLTokenType.DoubleQuoteIdentifier,
+                        start);
+
+                    return;
                 }
-                var current = Consume();
-                raw.Append(current);
-                clean.Append(current);
+                Consume();
             }
 
-            throw new FormatException(CreateErrorMessage(_input, startIndex, $"Unterminated quoted identifier, missing '{closingChar}'"));
+            throw new FormatException(ErrorFormatter.Create(_input, _index, $"Unterminated quoted identifier, missing '{closingChar}'"));
         }
-
-        private (string raw, string clean) ParseNumber()
+        private void ParseNumber()
         {
-            var clean = new StringBuilder();
-            var raw = new StringBuilder();
+            var start = _index;
             var dotCount = 0;
             var hasDigit = false;
+            SQLTokenType type = SQLTokenType.IntegerLiteral;
 
-            // Mantissa
+            if (Current == '$')
+            {
+                type = SQLTokenType.MoneyLiteral;
+                Consume();
+            }
+
             while (char.IsDigit(Current) || Current == '.')
             {
-                if (char.IsDigit(Current))
+                if (char.IsDigit(Current) && !hasDigit)
                     hasDigit = true;
 
                 if (Current == '.')
@@ -394,138 +363,116 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
                     if (dotCount > 1)
                     {
-                        var err = CreateErrorMessage(_input, _index, $"Multiple decimal points '{clean}'");
+                        var num = _input.Substring(start, _index - start);
+                        var err = ErrorFormatter.Create(_input, _index, $"Multiple decimal points '{num}'");
                         throw new FormatException(err);
                     }
+
+                    if (type != SQLTokenType.MoneyLiteral)
+                        type = SQLTokenType.DecimalLiteral;
                 }
 
-                var c = Consume();
-                raw.Append(c);
-                clean.Append(c);
+                Consume();
             }
 
             if (!hasDigit)
             {
-                var err = CreateErrorMessage(_input, _index, $"Number requires digits '{clean}'");
+                var num = _input.Substring(start, _index - start);
+                var err = ErrorFormatter.Create(_input, _index, $"Number requires digits '{num}'");
                 throw new FormatException(err);
             }
 
             // Scientific notation
             if (Current == 'e' || Current == 'E')
             {
-                var c = Consume();
-                raw.Append(c);
-                clean.Append(c);
-
+                Consume();
 
                 if (Current == '+' || Current == '-')
-                {
-                    c = Consume();
-                    raw.Append(c);
-                    clean.Append(c);
-                }
+                    Consume();
 
 
                 if (!char.IsDigit(Current))
                 {
-                    var err = CreateErrorMessage(_input, _index, $"Invalid scientific notation '{clean}'");
+                    var num = _input.Substring(start, _index - start);
+                    var err = ErrorFormatter.Create(_input, _index, $"Invalid scientific notation '{num}'");
                     throw new FormatException(err);
                 }
 
                 while (char.IsDigit(Current))
-                {
-                    c = Consume();
-                    raw.Append(c);
-                    clean.Append(c);
-                }
+                    Consume();
 
                 if (Current == 'e' || Current == 'E')
                 {
-                    var err = CreateErrorMessage(_input, _index, $"Too many Exponent Marker '{clean}'");
+                    var num = _input.Substring(start, _index - start);
+                    var err = ErrorFormatter.Create(_input, _index, $"Too many Exponent Marker '{num}'");
                     throw new FormatException(err);
                 }
 
                 if (Current == '.')
                 {
-                    var err = CreateErrorMessage(_input, _index, $"Exponent must be integer '{clean}'");
+                    var num = _input.Substring(start, _index - start);
+                    var err = ErrorFormatter.Create(_input, _index, $"Exponent must be integer '{num}'");
                     throw new FormatException(err);
                 }
+
+                type = SQLTokenType.ScientificLiteral;
             }
 
-            return (raw.ToString(), clean.ToString());
+            AddToken(type, start);
         }
-
-        private (string raw, string clean) ParseIdentifierOrKeyword()
+        private void ParseIdentifierOrKeyword()
         {
-            var clean = new StringBuilder();
-            var raw = new StringBuilder();
+            var start = _index;
+            SQLTokenType type = SQLTokenType.Identifier;
+
+            if (Current == '@')
+            {
+                Consume();
+                if (Current == '@')
+                    Consume();
+                type = SQLTokenType.Variable;
+            }
+
             while (Current != '\0' && (char.IsLetterOrDigit(Current) || Current == '_'))
             {
-                var current = Consume();
-                raw.Append(current);
-                clean.Append(current);
+                Consume();
             }
-            return (raw.ToString(), clean.ToString());
+
+            var text = _input.AsSpan(start, _index - start);
+
+            if (text.Equals("NULL", StringComparison.OrdinalIgnoreCase))
+                type = SQLTokenType.NullLiteral;
+            else if (_sqlKeywords.Contains(text))
+                type = SQLTokenType.Keyword;
+            else if (_sqlCustomKeywords.Contains(text))
+                type = SQLTokenType.Keyword;
+            else if (_sqlDataTypes.Contains(text))
+                type = SQLTokenType.SQLType;
+
+            AddToken(type, start);
         }
-
-        private static bool IsHexDigit(char c) =>
-            (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
-
-        private void AddToken(SQLTokenType type, Func<(string raw, string clean)> operation)
+        private void ConsumeAndAddToken(SQLTokenType type, int amount)
         {
             var start = _index;
-            var val = operation();
 
-            var token = new SQLToken(type, val.raw, val.clean, start, val.raw.Length, val.clean.Length);
-            _tokens.Add(token);
-        }
-        private void AddToken(SQLTokenType type, Func<string> operation)
-        {
-            var start = _index;
-            var val = operation();
+            if (amount < 0 || amount > _input.Length - _index)
+                throw new ArgumentOutOfRangeException(nameof(amount));
 
-            var token = new SQLToken(type, val, val, start, val.Length, val.Length);
-            _tokens.Add(token);
+            _index += amount;
+
+            AddToken(type, start);
         }
         #endregion
-        #region Error Formatting
-
-        private (string Snippet, int Pointer, int Length, int Start, int End) GetContext(string text, int startIdx, int endIdx, int contextLength)
+        #region Helper
+        private static bool IsHexDigit(char c) =>
+            (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
+        private void AddToken(SQLTokenType type, int start)
         {
-            int start = Math.Max(0, startIdx - contextLength);
-            int end = Math.Min(text.Length, endIdx + contextLength + 1);
-            int length = end - start;
-            return (text[start..end], startIdx - start, length, start, end);
+            _tokens.Add(new SQLToken(
+                type,
+                start,
+                _index - start));
         }
-
-        private string CreateErrorMessage(string text, int errorIndexPos, string errorMessage, int errorTextLength = 1, int contextLength = 25)
-        {
-            errorTextLength = errorTextLength <= 0 ? 1 : errorTextLength;
-            int endIdx = errorIndexPos + errorTextLength - 1;
-            var context = GetContext(text, errorIndexPos, endIdx, contextLength);
-
-            bool left = context.Start > 0;
-            bool right = context.End < text.Length;
-
-            var str = new StringBuilder();
-            string trailingStr = "...";
-            string leftDots = left ? trailingStr : "";
-            string rightDots = right ? trailingStr : "";
-
-            string enclosing = new string('=', context.Length + leftDots.Length + rightDots.Length);
-            int pointerOffset = context.Pointer + leftDots.Length;
-            string pointer = $"{new string(' ', pointerOffset)}{new string('^', errorTextLength)}";
-
-            return str
-                .Append('\n')
-                .Append($"Error At Position: {errorIndexPos}\n")
-                .Append(enclosing).Append('\n')
-                .Append(leftDots).Append(context.Snippet).Append(rightDots).Append('\n')
-                .Append(pointer).Append('\n')
-                .Append(enclosing).Append('\n')
-                .Append(errorMessage).ToString();
-        }
-
         #endregion
     }
 }

@@ -10,6 +10,7 @@ namespace SQLQueryBuilder.Builder
 {
     internal class QueryBuilderImpl<TBase> : IQueryFrom, IQuerySelect, IQuery, IQueryFilter
     {
+        private bool _baseValidated;
         private SQLQuery _query;
         private SQLBuilderHelper _builderHelper;
         private SQLSemanticValidator _validator;
@@ -17,6 +18,7 @@ namespace SQLQueryBuilder.Builder
 
         internal QueryBuilderImpl(SQLValidationMode mode)
         {
+            _baseValidated = false;
             _queryGenerator = new SQLGenerator();
             _builderHelper = new SQLBuilderHelper();
             _validator = new SQLSemanticValidator(mode);
@@ -93,16 +95,25 @@ namespace SQLQueryBuilder.Builder
         {
             _validator.ValidateBaseQuery(_query);
             _queryGenerator.BuildBaseQuery(_query);
+            _baseValidated = true;
             return this;
         }
 
-        public SQLQueryData Build()
+        public SQLQueryResult Build()
         {
-            _validator.ValidateBaseQuery(_query);
-
-            var queryData = new SQLQueryData
+            if (!_baseValidated)
             {
-                SQL = _queryGenerator.BuildCompleteQuery(_query),
+                _validator.ValidateBaseQuery(_query);
+                _queryGenerator.BuildBaseQuery(_query);
+                _baseValidated = true;
+            }
+                
+            _validator.ValidateClauses(_query);
+            _queryGenerator.BuildClauses(_query);
+
+            var queryData = new SQLQueryResult
+            {
+                SQL = _queryGenerator.Build(),
                 Parameters = null
             };
 
@@ -120,28 +131,28 @@ namespace SQLQueryBuilder.Builder
             if (string.IsNullOrWhiteSpace(alias))
                 throw new ArgumentNullException("Alias cannot be null!");
 
-            var tokens = _builderHelper.BuildTokens(alias);
+            var context = _builderHelper.BuildTokens(alias);
 
-            if (tokens.Count != 2)
+            if (context.Tokens.Count != 2)
             {
                 throw new SyntaxErrorException(
                     $"'{alias}' is not a valid alias.");
             }
 
-            var token = tokens[0];
+            var token = context.Tokens[0];
 
             bool validAlias =
                 token.Type == SQLTokenType.Identifier ||
                 token.Type == SQLTokenType.BracketIdentifier ||
                 token.Type == SQLTokenType.DoubleQuoteIdentifier;
 
-            if (!validAlias || tokens[1].Type != SQLTokenType.EOF)
+            if (!validAlias || context.Tokens[1].Type != SQLTokenType.EOF)
             {
                 throw new SyntaxErrorException(
                     $"'{alias}' is not a valid alias.");
             }
 
-            return token.Value;
+            return context.GetSlice(context.Tokens[0]).ToString();
         }
     }
 }

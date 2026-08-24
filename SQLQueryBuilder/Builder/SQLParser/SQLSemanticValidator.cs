@@ -8,21 +8,24 @@ namespace SQLQueryBuilder.Builder.SQLParser
 {
     public class SQLSemanticValidator
     {
-        private SQLTableManager _tableManager = new();
-        private SQLDTOManager _dtoManager = new();
-        private SQLFunctionDefinition _sQLFunctionDefinitions = new SQLFunctionDefinition();
+        private SQLTableManager _tableManager;
+        private SQLDTOManager _dtoManager;
+        private SQLFunctionDefinition _sQLFunctionDefinitions;
         private SQLValidationMode _mode;
 
         public SQLSemanticValidator(SQLValidationMode mode)
         {
             _mode = mode;
+            _tableManager = new SQLTableManager();
+            _dtoManager = new SQLDTOManager();
+            _sQLFunctionDefinitions = new SQLFunctionDefinition();
         }
 
         #region Validation
         public void ValidateQuery(SQLQuery query)
         {
             ValidateBaseQuery(query);
-            ValidateFilter(query);
+            ValidateClauses(query);
         }
 
         public void ValidateBaseQuery(SQLQuery query)
@@ -33,7 +36,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             ValidateSelect(query.Select);
         }
 
-        public void ValidateFilter(SQLQuery query)
+        public void ValidateClauses(SQLQuery query)
         {
             ValidateHaving(query.Having, query.GroupBy);
             ValidateWhere(query.Where);

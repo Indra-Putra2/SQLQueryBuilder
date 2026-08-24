@@ -1,4 +1,5 @@
-﻿using SQLQueryBuilder.Builder.SQLParser;
+﻿using SQLQueryBuilder.Builder;
+using SQLQueryBuilder.Builder.SQLParser;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.SQLEnum;
 using System.Data;
@@ -7,24 +8,27 @@ internal class SQLFromParser
 {
     private SQLParserHelper _helper;
 
-    public List<string> Parse(string input, List<SQLToken> tokens)
+    public List<string> Parse(SQLQueryContext context)
     {
-        _helper = new SQLParserHelper(input, tokens);
+        _helper = new SQLParserHelper(context);
 
         var parts = new List<string>();
 
         // First identifier
         if (!_helper.Expects(_helper.Current, SQLParserHelper.Identifiers))
         {
-            var err = _helper.CreateErrorMessage(
+            var err = ErrorFormatter.Create(
                 _helper.Input,
                 _helper.Current.StartPosition,
                 $"Expected Table Name",
-                errorTextLength: _helper.Current.RawLength);
+                errorTextLength: _helper.Current.Length);
             throw new SyntaxErrorException(err);
         }
-
-        parts.Add(_helper.Consume().Value);
+        var token = _helper.Consume();
+        var name = _helper.GetSlice(token);
+        if (_helper.Expects(token, SQLParserHelper.DelimitedIdentifiers))
+            name = name[1..^1];
+        parts.Add(name.ToString());
 
 
         // dbo.Table style
@@ -34,15 +38,19 @@ internal class SQLFromParser
 
             if (!_helper.Expects(_helper.Current, SQLParserHelper.Identifiers))
             {
-                var err = _helper.CreateErrorMessage(
+                var err = ErrorFormatter.Create(
                     _helper.Input,
                     _helper.Current.StartPosition,
                     $"Expected Identifier after '.'",
-                    errorTextLength: _helper.Current.RawLength);
+                    errorTextLength: _helper.Current.Length);
                 throw new SyntaxErrorException(err);
             }
 
-            parts.Add(_helper.Consume().Value);
+            token = _helper.Consume();
+            name = _helper.GetSlice(token);
+            if (_helper.Expects(token, SQLParserHelper.DelimitedIdentifiers))
+                name = name[1..^1];
+            parts.Add(name.ToString());
 
             if (parts.Count > 4)
             {
@@ -53,11 +61,11 @@ internal class SQLFromParser
 
         if (!_helper.Expect(_helper.Current, SQLTokenType.EOF))
         {
-            var err = _helper.CreateErrorMessage(
+            var err = ErrorFormatter.Create(
                 _helper.Input,
                 _helper.Current.StartPosition,
-                $"Unexpected token '{_helper.Current.Value}' after table name. Aliases must be provided separately.",
-                errorTextLength: _helper.Current.RawLength);
+                $"Unexpected token '{_helper.GetSlice(_helper.Consume())}' after table name. Aliases must be provided separately.",
+                errorTextLength: _helper.Current.Length);
             throw new SyntaxErrorException(err);
         }
 

@@ -9,15 +9,15 @@ namespace SQLQueryBuilder.Builder.SQLParser
     {
         private SQLParserHelper _helper;
         private SQLExpressionParser _expressionParser = new SQLExpressionParser();
-        public SQLExpression Parse(string input, List<SQLToken> tokens)
+        public SQLExpression Parse(SQLQueryContext context)
         {
-            _helper = new SQLParserHelper(input, tokens);
+            _helper = new SQLParserHelper(context);
 
             var expr = _expressionParser.Parse(_helper);
 
             if (!IsPredicate(expr))
             {
-                var err = _helper.CreateErrorMessage(
+                var err = ErrorFormatter.Create(
                 _helper.Input,
                 0,
                 "JOIN condition must evaluate to a boolean.",

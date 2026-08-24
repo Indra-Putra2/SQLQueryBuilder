@@ -11,7 +11,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\ASTBuilder\ASTBuilder.Core\ASTBuilder.Core.csproj" />
     <ProjectReference Include="..\..\HardwareInventoryLibrary\HardwareInventoryLibrary\HardwareInventoryLibrary.csproj" />
   </ItemGroup>
 

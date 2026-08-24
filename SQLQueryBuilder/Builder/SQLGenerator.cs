@@ -9,9 +9,8 @@ namespace SQLQueryBuilder.Builder
     {
         private readonly StringBuilder _query = new();
         private int _indent = 0;
-        private bool _baseQueryBuilt = false;
         #region SQL Builder
-        public void BuildSelect(SQLQuery sqlQuery)
+        private void BuildSelect(SQLQuery sqlQuery)
         {
             _query.Append("SELECT");
             _indent++;
@@ -26,14 +25,14 @@ namespace SQLQueryBuilder.Builder
 
             _indent--;
         }
-        public void BuildFrom(SQLQuery sqlQuery)
+        private void BuildFrom(SQLQuery sqlQuery)
         {
             NewLine();
             _query.Append("FROM ").Append(string.Join(".", sqlQuery.From.TableName));
             if (sqlQuery.From.Alias != null)
                 _query.Append($" AS {sqlQuery.From.Alias}");
         }
-        public void BuildJoins(SQLQuery sqlQuery)
+        private void BuildJoins(SQLQuery sqlQuery)
         {
             if (sqlQuery.Joins.Count == 0) return;
 
@@ -59,7 +58,7 @@ namespace SQLQueryBuilder.Builder
                 WriteExpression(join.Condition);
             }
         }
-        public void BuildHaving(SQLQuery sqlQuery)
+        private void BuildHaving(SQLQuery sqlQuery)
         {
             if (sqlQuery.Having == null) return;
 
@@ -67,7 +66,7 @@ namespace SQLQueryBuilder.Builder
             _query.Append("HAVING ");
             WriteExpression(sqlQuery.Having);
         }
-        public void BuildWhere(SQLQuery sqlQuery)
+        private void BuildWhere(SQLQuery sqlQuery)
         {
             if (sqlQuery.Where == null) return;
 
@@ -75,7 +74,7 @@ namespace SQLQueryBuilder.Builder
             _query.Append("WHERE ");
             WriteExpression(sqlQuery.Where);
         }
-        public void BuildGroupBy(SQLQuery sqlQuery)
+        private void BuildGroupBy(SQLQuery sqlQuery)
         {
             if (sqlQuery.GroupBy == null) return;
 
@@ -89,7 +88,7 @@ namespace SQLQueryBuilder.Builder
                 WriteExpression(sqlQuery.GroupBy[i]);
             }
         }
-        public void BuildOrderBy(SQLQuery sqlQuery)
+        private void BuildOrderBy(SQLQuery sqlQuery)
         {
             if (sqlQuery.OrderBy == null) return;
 
@@ -105,30 +104,24 @@ namespace SQLQueryBuilder.Builder
         }
         public void BuildBaseQuery(SQLQuery sqlQuery)
         {
-            _baseQueryBuilt = false;
-
             BuildSelect(sqlQuery);
             BuildFrom(sqlQuery);
             BuildJoins(sqlQuery);
-
-            _baseQueryBuilt = true;
         }
-        public string BuildCompleteQuery(SQLQuery sqlQuery)
+        public string BuildClauses(SQLQuery sqlQuery)
         {
-            if(_baseQueryBuilt == false) 
-                BuildBaseQuery(sqlQuery);
-
             BuildWhere(sqlQuery);
             BuildGroupBy(sqlQuery);
             BuildHaving(sqlQuery);
             BuildOrderBy(sqlQuery);
 
             return _query.ToString();
-
         }
+
+        public string Build() => _query.ToString();
         #endregion
         #region SQL Expression Writer
-        private void WriteExpression(SQLExpression expression)
+        private void WriteExpression(SQLExpression expression, bool parameterize = false)
         {
             switch (expression)
             {
@@ -187,6 +180,7 @@ namespace SQLQueryBuilder.Builder
                 case ParenthesizedExpression parenthesized:
                     WriteParenthesized(parenthesized);
                     break;
+
                 default:
                     throw new NotSupportedException(
                         $"SQL expression type '{expression.GetType().Name}' is not supported.");
@@ -197,7 +191,7 @@ namespace SQLQueryBuilder.Builder
             var table = expression.Table == null ? "" : string.Join(".", expression.Table);
             _query.Append(table).Append(".").Append(expression.Column);
         }
-        private void WriteLiteral(LiteralExpression expression)
+        private void WriteLiteral(LiteralExpression expression, bool parameterize = false)
         {
             switch (expression.Type)
             {
@@ -211,11 +205,7 @@ namespace SQLQueryBuilder.Builder
                     _query.Append("N").Append($"'{expression.Value}'");
                     break;
                 case SQLLiteralType.String:
-                    _query.Append($"'{expression.Value}'");
-                    break;
                 case SQLLiteralType.Scientific:
-                    _query.Append($"'{expression.Value}'");
-                    break;
                 case SQLLiteralType.Datetime:
                     _query.Append($"'{expression.Value}'");
                     break;
@@ -223,8 +213,6 @@ namespace SQLQueryBuilder.Builder
                     _query.Append("NULL");
                     break;
                 case SQLLiteralType.Decimal:
-                    _query.Append(expression.Value);
-                    break;
                 case SQLLiteralType.Integer:
                     _query.Append(expression.Value);
                     break;

@@ -1,7 +1,5 @@
-﻿using Dapper;
+﻿using SQLQueryBuilder.Model;
 using SQLQueryBuilder.SQLEnum;
-using ASTBuilder.Core.ASTModel;
-using SQLQueryBuilder.Model;
 
 namespace SQLQueryBuilder.Interface
 {
@@ -22,7 +20,7 @@ namespace SQLQueryBuilder.Interface
         IQueryFilter Having(string having);
         IQueryFilter Where(string where);
         IQueryFilter ValidateBaseQuery();
-        SQLQueryData Build();
+        SQLQueryResult Build();
     }
 
     public interface IQueryFilter
@@ -31,6 +29,6 @@ namespace SQLQueryBuilder.Interface
         IQueryFilter GroupBy(string groupBy);
         IQueryFilter Having(string having);
         IQueryFilter Where(string where);
-        SQLQueryData Build();
+        SQLQueryResult Build();
     }
 }
