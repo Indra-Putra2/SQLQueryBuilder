@@ -3,12 +3,16 @@
     public enum SQLFunctionType
     {
         Unknown,
-        Number,
-        String,
-        Boolean,
-        DateTime,
-        Binary,
-        Guid,
         Null,
+        Boolean,
+        Integer,
+        Double,
+        Decimal,
+        String,
+        Date,
+        Time,
+        DateTime,
+        Guid,
+        Binary,
     }
 }

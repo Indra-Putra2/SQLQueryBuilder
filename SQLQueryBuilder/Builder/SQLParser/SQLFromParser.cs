@@ -15,7 +15,7 @@ internal class SQLFromParser
         var parts = new List<string>();
 
         // First identifier
-        if (!_helper.Expects(_helper.Current, SQLParserHelper.Identifiers))
+        if (!_helper.Expects(_helper.Current, SQLDictionary.Identifiers))
         {
             var err = ErrorFormatter.Create(
                 _helper.Input,
@@ -26,9 +26,7 @@ internal class SQLFromParser
         }
         var token = _helper.Consume();
         var name = _helper.GetSlice(token);
-        if (_helper.Expects(token, SQLParserHelper.DelimitedIdentifiers))
-            name = name[1..^1];
-        parts.Add(name.ToString());
+        parts.Add(SQLParserHelper.UnescapeIdentifier(name));
 
 
         // dbo.Table style
@@ -36,7 +34,7 @@ internal class SQLFromParser
         {
             _helper.Consume(); // consume .
 
-            if (!_helper.Expects(_helper.Current, SQLParserHelper.Identifiers))
+            if (!_helper.Expects(_helper.Current, SQLDictionary.Identifiers))
             {
                 var err = ErrorFormatter.Create(
                     _helper.Input,
@@ -48,9 +46,7 @@ internal class SQLFromParser
 
             token = _helper.Consume();
             name = _helper.GetSlice(token);
-            if (_helper.Expects(token, SQLParserHelper.DelimitedIdentifiers))
-                name = name[1..^1];
-            parts.Add(name.ToString());
+            parts.Add(SQLParserHelper.UnescapeIdentifier(name));
 
             if (parts.Count > 4)
             {

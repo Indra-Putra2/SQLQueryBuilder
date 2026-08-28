@@ -7,7 +7,9 @@
         Unknown,
 
         // Literals
-        DatetimeLiteral,      // D'2020-05-01'
+        DateLiteral,          // d'2020-05-01' / D'2020-05-01'
+        TimeLiteral,          // t'14:30:00' / T'14:30:00'
+        DatetimeLiteral,      // dt'2026-08-26 14:30:45'/ DT'2026-08-26 14:30:45' (case insensitive)
         IntegerLiteral,       // 123, -456
         DecimalLiteral,       // 123.45
         ScientificLiteral,    // 1.5E10
@@ -66,6 +68,7 @@
         ModuloEquals,         // %=
 
         // Custom Syntax
-        SQLType          // NUMBER, STRING, NULL etc
+        SQLType,              // NUMBER, STRING, NULL etc
+        SQLTypeNullable       // ?
     }
 }

@@ -1,6 +1,6 @@
 ﻿using SQLQueryBuilder.Model;
 using SQLQueryBuilder.SQLEnum;
-using System.Collections.Frozen;
+using System.Globalization;
 
 namespace SQLQueryBuilder.Builder.SQLParser
 {
@@ -9,30 +9,6 @@ namespace SQLQueryBuilder.Builder.SQLParser
         private List<SQLToken> _tokens;
         private string _input;
         private int _index = 0;
-
-        private static readonly FrozenSet<string>.AlternateLookup<ReadOnlySpan<char>> _sqlKeywords = new[]
-        {
-            "SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE",
-            "INTO", "VALUES", "SET",
-            "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "OUTER", "ON",
-            "AND", "OR", "NOT", "IN", "EXISTS", "BETWEEN", "LIKE", "IS",
-            "ORDER", "BY", "GROUP", "HAVING", "DISTINCT",
-            "AS",
-            "CASE", "WHEN", "THEN", "ELSE", "END",
-            "CREATE", "ALTER", "DROP", "TABLE", "VIEW", "INDEX",
-            "LIMIT", "OFFSET", "DEFAULT",
-            "ASC", "DESC"
-        }.ToFrozenSet(StringComparer.OrdinalIgnoreCase).GetAlternateLookup<ReadOnlySpan<char>>();
-
-        private static readonly FrozenSet<string>.AlternateLookup<ReadOnlySpan<char>> _sqlCustomKeywords = new[]
-        {
-            "TYPE"
-         }.ToFrozenSet(StringComparer.OrdinalIgnoreCase).GetAlternateLookup<ReadOnlySpan<char>>();
-
-        private static readonly FrozenSet<string>.AlternateLookup<ReadOnlySpan<char>> _sqlDataTypes = new[]
-        {
-            "NUMBER", "STRING", "BOOL", "DATETIME", "BINARY", "GUID"
-        }.ToFrozenSet(StringComparer.OrdinalIgnoreCase).GetAlternateLookup<ReadOnlySpan<char>>();
 
         private char Current => _index < _input.Length ? _input[_index] : '\0';
         private char Peek(int offset = 1)
@@ -94,10 +70,20 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 {
                     ParseString();
                 }
-                // Datetime Literals (e.g. d'2020-07-01')
+                // Date Literals (e.g. d'2020-07-01')
                 else if ((c == 'D' || c == 'd') && Peek() == '\'')
                 {
-                    ParseString();
+                    ParseDate();
+                }
+                // Time Literals (e.g. t'14:30:00')
+                else if ((c == 'T' || c == 't') && Peek() == '\'')
+                {
+                    ParseTime();
+                }
+                // Datetime Literals (e.g. dt'2020-07-01 14:30:00')
+                else if ((c == 'D' || c == 'd') && (Peek() == 'T' || Peek() == 't') && Peek(2) == '\'')
+                {
+                    ParseDatetime();
                 }
                 // Variables (@var or @@var)
                 else if (c == '@')
@@ -203,6 +189,8 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 else if (c == '|') ConsumeAndAddToken(SQLTokenType.BitwiseOr, 1);
                 else if (c == '^') ConsumeAndAddToken(SQLTokenType.BitwiseXor, 1);
 
+                // Custom Syntax
+                else if (c == '?') ConsumeAndAddToken(SQLTokenType.SQLTypeNullable, 1);
                 else
                 {
                     ConsumeAndAddToken(SQLTokenType.Unknown, 1);
@@ -246,6 +234,95 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 start,
                 "Unterminated multi-line comment!"));
         }
+        private void ParseDate()
+        {
+            int start = _index;
+            var format = "YYYY-MM-DD";
+            Consume(); // D/d
+            Consume(); // '
+
+            int year = ParseDatePart(start, "year", 4, format);
+            ExpectHyphen(start, format);
+
+            int month = ParseDatePart(start, "month", 2, format);
+            ExpectHyphen(start, format);
+
+            int day = ParseDatePart(start, "day", 2, format);
+
+            if (Current != '\'')
+                ThrowTemporalError(start, "Unterminated date literal.", format);
+
+            ValidateDate(start, year, month, day, format);
+
+            Consume(); // '
+
+            AddToken(SQLTokenType.DateLiteral, start);
+        }
+        private void ParseTime()
+        {
+            var start = _index;
+            var format = "HH:MM:SS[.fffffff]";
+
+            Consume(); // T/t
+            Consume(); // '
+
+            var hours = ParseDatePart(start, "Hour", 2, format);
+            ExpectColon(start, format);
+
+            var minutes = ParseDatePart(start, "Minute", 2, format);
+            ExpectColon(start, format);
+
+            var seconds = ParseDateSeconds(start, format);
+
+            if (Current != '\'')
+                ThrowTemporalError(start, "Invalid time literal.", format);
+
+            ValidateTime(start, hours, minutes, seconds, format);
+
+            Consume(); // '
+
+            AddToken(SQLTokenType.TimeLiteral, start);
+        }
+        private void ParseDatetime()
+        {
+            var start = _index;
+            var format = "YYYY-MM-DD HH:MM:SS[.fffffff]";
+
+            Consume(); // D/d
+            Consume(); // T/t
+            Consume(); // '
+
+            int year = ParseDatePart(start, "year", 4, format);
+            ExpectHyphen(start, format);
+
+            int month = ParseDatePart(start, "month", 2, format);
+            ExpectHyphen(start, format);
+
+            int day = ParseDatePart(start, "day", 2, format);
+
+            if (Current != ' ')
+                ThrowTemporalError(start, "Invalid datetime literal.", format);
+
+            Consume();
+
+            var hours = ParseDatePart(start, "Hour", 2, format);
+            ExpectColon(start, format);
+
+            var minutes = ParseDatePart(start, "Minute", 2, format);
+            ExpectColon(start, format);
+
+            var seconds = ParseDateSeconds(start, format);
+
+            if (Current != '\'')
+                ThrowTemporalError(start, "Invalid datetime literal.", format);
+
+            ValidateDate(start, year, month, day, format);
+            ValidateTime(start, hours, minutes, seconds, format);
+
+            Consume(); // '
+
+            AddToken(SQLTokenType.DatetimeLiteral, start);
+        }
         private void ParseHex()
         {
             var start = _index;
@@ -275,14 +352,9 @@ namespace SQLQueryBuilder.Builder.SQLParser
             int start = _index;
             SQLTokenType type = SQLTokenType.StringLiteral;
 
-            if (Current == 'd' || Current == 'D')
+            if (Current == 'n' || Current == 'N')
             {
-                Consume(); // Consume d/D
-                type = SQLTokenType.DatetimeLiteral;
-            }
-            else if (Current == 'n' || Current == 'N')
-            {
-                Consume(); // Consume d/D
+                Consume(); // Consume n/N
                 type = SQLTokenType.UnicodeString;
             }
 
@@ -442,11 +514,11 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             if (text.Equals("NULL", StringComparison.OrdinalIgnoreCase))
                 type = SQLTokenType.NullLiteral;
-            else if (_sqlKeywords.Contains(text))
+            else if (SQLDictionary.SQLKeywordsLookup.Contains(text))
                 type = SQLTokenType.Keyword;
-            else if (_sqlCustomKeywords.Contains(text))
+            else if (SQLDictionary.SQLCustomKeywordsLookup.Contains(text))
                 type = SQLTokenType.Keyword;
-            else if (_sqlDataTypes.Contains(text))
+            else if (SQLDictionary.SQLCustomDataTypeLookup.Contains(text))
                 type = SQLTokenType.SQLType;
 
             AddToken(type, start);
@@ -462,6 +534,71 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             AddToken(type, start);
         }
+        private int ParseDatePart(int start, string name, int expectedDigits, string format)
+        {
+            // 1. Ensure have enough characters left in the input to even read expectedDigits
+            if (_index + expectedDigits > _input.Length)
+                ThrowTemporalError(start, $"Invalid {name}.", format);
+
+            // 2. Slice exact target window zero-allocation
+            ReadOnlySpan<char> partSpan = _input.AsSpan(_index, expectedDigits);
+
+            // 3. Fast-parse integer from span (implicitly validates digit format)
+            if (!int.TryParse(partSpan, out int value))
+            {
+                ThrowTemporalError(start, $"Invalid {name}.", format);
+            }
+
+            // Advance position by expectedDigits
+            _index += expectedDigits;
+
+            return value;
+        }
+        private decimal ParseDateSeconds(int start, string format)
+        {
+            int partStart = _index;
+
+            // 1. Advance the lexer pointer past all valid second characters (digits and dot)
+            while (Current != '\0' && (char.IsDigit(Current) || Current == '.'))
+            {
+                Consume();
+            }
+
+            // 2. Extract zero-allocation slice of the seconds segment
+            ReadOnlySpan<char> secondsSpan = _input.AsSpan(partStart, _index - partStart);
+
+            if (secondsSpan.IsEmpty)
+            {
+                ThrowTemporalError(start, "Invalid seconds.", format);
+            }
+
+            // 3. Fast structural validation on the span
+            int dotIndex = secondsSpan.IndexOf('.');
+            if (dotIndex != -1)
+            {
+                // Check for multiple decimal points
+                if (secondsSpan[(dotIndex + 1)..].Contains('.'))
+                {
+                    ThrowTemporalError(start, "Multiple decimal points.", format);
+                }
+
+                // Check fractional digit count (max 7 digits)
+                int fractionalCount = secondsSpan.Length - (dotIndex + 1);
+                if (fractionalCount > 7)
+                {
+                    ThrowTemporalError(start, $"Seconds cannot have more than 7 fractional digits.", format);
+                }
+            }
+
+            // 4. Single-pass parse directly off the span
+            if (!decimal.TryParse(secondsSpan, CultureInfo.InvariantCulture, out decimal value))
+            {
+                ThrowTemporalError(start, "Invalid seconds.", format);
+            }
+
+            return value;
+        }
+
         #endregion
         #region Helper
         private static bool IsHexDigit(char c) =>
@@ -472,6 +609,47 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 type,
                 start,
                 _index - start));
+        }
+        private void ThrowTemporalError(int start, string message, string format)
+        {
+            var num = _input.Substring(start, _index - start);
+            var err = ErrorFormatter.Create(_input, _index, $"{message} {num}. Expected format: {format}.");
+            throw new FormatException(err);
+        }
+        private void ExpectHyphen(int start, string format)
+        {
+            if (Current != '-')
+                ThrowTemporalError(start, "Expected '-' in date.", format);
+
+            Consume();
+        }
+        private void ExpectColon(int start, string format)
+        {
+            if (Current != ':')
+                ThrowTemporalError(start, "Expected ':' in time.", format);
+
+            Consume();
+        }
+        private void ValidateTime(int start, int hours, int minutes, decimal seconds, string format)
+        {
+            if (hours is < 0 or > 23)
+                ThrowTemporalError(start, $"Invalid hours {hours}.", format);
+
+            if (minutes is < 0 or > 59)
+                ThrowTemporalError(start, $"Invalid minutes {minutes}.", format);
+
+            if (seconds < 0 || seconds >= 60)
+                ThrowTemporalError(start, $"Invalid seconds {seconds}.", format);
+        }
+        private void ValidateDate(int start, int year, int month, decimal day, string format)
+        {
+            if (month is < 1 or > 12)
+                ThrowTemporalError(start, $"Invalid month {month}.", format);
+
+            int maxDay = SQLDictionary._daysInMonth[month - 1];
+
+            if (day is < 1 || day > maxDay)
+                ThrowTemporalError(start, $"Invalid day {day}.", format);
         }
         #endregion
     }

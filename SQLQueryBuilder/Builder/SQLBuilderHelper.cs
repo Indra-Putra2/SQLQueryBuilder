@@ -1,8 +1,6 @@
 ﻿using SQLQueryBuilder.Builder.SQLParser;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.SQL_Expression;
-using SQLQueryBuilder.SQLEnum;
-using System.Data;
 
 namespace SQLQueryBuilder.Builder
 {
@@ -15,7 +13,6 @@ namespace SQLQueryBuilder.Builder
         private SQLGroupByParser _groupByParser = new SQLGroupByParser();
         private SQLOrderByParser _orderByParser = new SQLOrderByParser();
         private SQLFromParser _fromParser = new SQLFromParser();
-        private SQLParserHelper _helper;
 
         public SQLQueryContext BuildTokens(string input)
         {

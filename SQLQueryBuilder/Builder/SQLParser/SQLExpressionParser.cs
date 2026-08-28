@@ -3,6 +3,7 @@ using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
 using System.Data;
 using System.Globalization;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace SQLQueryBuilder.Builder.SQLParser
 {
@@ -263,10 +264,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 };
             }
 
-            while (!_helper.IsAtEnd && _helper.Expects(_helper.Current, SQLParserHelper.Comparison))
+            while (!_helper.IsAtEnd && _helper.Expects(_helper.Current, SQLDictionary.Comparison))
             {
                 SQLBinaryOperator op;
-                if (!SQLParserHelper.ComparisonOperators.TryGetValue(_helper.Current.Type, out op))
+                if (!SQLDictionary.ComparisonOperators.TryGetValue(_helper.Current.Type, out op))
                 {
                     var token = _helper.Current;
                     var err = ErrorFormatter.Create(_helper.Input, _helper.Current.StartPosition, $"Operator {_helper.GetSlice(token)} ({token.Type}) is not a valid comparison operator", errorTextLength: token.Length);
@@ -499,11 +500,11 @@ namespace SQLQueryBuilder.Builder.SQLParser
             }
 
             // 2. Literals (123, 'abc', NULL, etc.)
-            else if (!_helper.IsAtEnd && _helper.Expects(_helper.Current, SQLParserHelper.Literals))
+            else if (!_helper.IsAtEnd && _helper.Expects(_helper.Current, SQLDictionary.Literals))
                 return ParseLiteral();
 
             // 3. Identifiers or Function Calls (Users.Age, COUNT(id), etc.)
-            else if (!_helper.IsAtEnd && _helper.Expects(_helper.Current, SQLParserHelper.Identifiers))
+            else if (!_helper.IsAtEnd && _helper.Expects(_helper.Current, SQLDictionary.Identifiers))
                 return ParseIdentifierOrFunction();
 
             // 4. // Parenthesized expression: (a + b)
@@ -638,16 +639,13 @@ namespace SQLQueryBuilder.Builder.SQLParser
             var token = _helper.Consume();
             var name = _helper.GetSlice(token);
 
-            if (_helper.Expects(token, SQLParserHelper.DelimitedIdentifiers))
-                name = _helper.GetSlice(token)[1..^1];
-
             if (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.LeftParen))
             {
                 return ParseFunction(name, token);
             }
             else if (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Dot))
             {
-                var parts = new List<string> { name.ToString() };
+                var parts = new List<string> { SQLParserHelper.UnescapeIdentifier(name) };
 
                 while (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Dot))
                 {
@@ -660,20 +658,16 @@ namespace SQLQueryBuilder.Builder.SQLParser
                         return new WildcardExpression { Span = CreateSpan(token), TableAlias = parts };
                     }
 
-                    if (!_helper.Expects(_helper.Current, SQLParserHelper.Identifiers) && !_helper.Expect(_helper.Current, SQLTokenType.Keyword))
+                    if (!_helper.Expects(_helper.Current, SQLDictionary.Identifiers) && !_helper.Expect(_helper.Current, SQLTokenType.Keyword))
                         throw new SyntaxErrorException("Expected identifier after '.'");
 
                     var columnToken = _helper.Consume();
                     name = _helper.GetSlice(columnToken);
 
-                    if (_helper.Expects(columnToken, SQLParserHelper.DelimitedIdentifiers))
-                        name = name[1..^1];
-
-                    parts.Add(name.ToString());
+                    parts.Add(SQLParserHelper.UnescapeIdentifier(name));
                 }
 
                 var column = parts[^1]; // Last item
-
                 parts.RemoveAt(parts.Count - 1);
 
                 return new ColumnExpression
@@ -688,7 +682,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             return new ColumnExpression()
             {
                 Span = CreateSpan(token),
-                Column = name.ToString()
+                Column = SQLParserHelper.UnescapeIdentifier(name)
             };
 
         }
@@ -698,7 +692,8 @@ namespace SQLQueryBuilder.Builder.SQLParser
             _helper.Consume(); // consume (
 
             var args = new List<SQLExpression>();
-            var funcType = SQLFunctionType.Unknown;
+            var declareType = SQLFunctionType.Unknown;
+            var nullable = false;
 
             while (!_helper.IsAtEnd && !_helper.Expect(_helper.Current, SQLTokenType.RightParen))
             {
@@ -724,7 +719,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 
                 var typeToken = _helper.Current;
 
-                if (!SQLParserHelper.TryGetSQLType(_helper.GetSlice(typeToken), out funcType))
+                if (!SQLDictionary.TryGetSQLType(_helper.GetSlice(typeToken), out declareType))
                 {
                     var err = ErrorFormatter.Create(
                         _helper.Input,
@@ -734,9 +729,16 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
                     throw new SyntaxErrorException(err);
                 }
-
                 _helper.Consume();
                 lastToken = typeToken;
+
+                var nullableToken = _helper.Current;
+                if (_helper.Expect(nullableToken, SQLTokenType.SQLTypeNullable))
+                {
+                    _helper.Consume();
+                    nullable = true;
+                    lastToken = nullableToken;
+                }
             }
 
             int endPosition = lastToken.StartPosition + lastToken.Length;
@@ -748,9 +750,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     Start = startToken.StartPosition,
                     Length = endPosition - startToken.StartPosition
                 },
-                Name = name.ToString(),
+                Name = SQLParserHelper.UnescapeIdentifier(name),
                 Arguments = args,
-                FunctionType = funcType
+                DeclaredType = declareType,
+                IsNullable = nullable,
             };
         }
 
@@ -763,17 +766,19 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 SQLTokenType.StringLiteral => new LiteralExpression
                 {
                     Span = CreateSpan(token),
-                    Value = UnescapeStringLiteral(val),
+                    Value = SQLParserHelper.UnescapeStringLiteral(val),
                     Type = SQLLiteralType.String
                 },
 
                 SQLTokenType.UnicodeString => new LiteralExpression
                 {
                     Span = CreateSpan(token),
-                    Value = UnescapeStringLiteral(val),
+                    Value = SQLParserHelper.UnescapeStringLiteral(val),
                     Type = SQLLiteralType.UnicodeString
                 },
 
+                SQLTokenType.DateLiteral => ParseDateTime(token),
+                SQLTokenType.TimeLiteral => ParseDateTime(token),
                 SQLTokenType.DatetimeLiteral => ParseDateTime(token),
                 SQLTokenType.IntegerLiteral => new LiteralExpression
                 {
@@ -796,19 +801,17 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     Type = SQLLiteralType.Scientific
                 },
 
-                // Lexer already stripped '$'
                 SQLTokenType.MoneyLiteral => new LiteralExpression
                 {
                     Span = CreateSpan(token),
-                    Value = decimal.Parse(val[1..], CultureInfo.InvariantCulture),
+                    Value = decimal.Parse(val[1..], NumberStyles.Currency, CultureInfo.InvariantCulture), //strip $
                     Type = SQLLiteralType.Money
                 },
 
-                // Lexer already stripped '0x'
                 SQLTokenType.HexLiteral => new LiteralExpression
                 {
                     Span = CreateSpan(token),
-                    Value = Convert.FromHexString(val[2..]),
+                    Value = Convert.FromHexString(val[2..]), // strip 0x
                     Type = SQLLiteralType.BinaryLiteral
                 },
 
@@ -826,26 +829,82 @@ namespace SQLQueryBuilder.Builder.SQLParser
         LiteralExpression ParseDateTime(SQLToken token)
         {
             var val = _helper.GetSlice(token);
-            if (!DateTime.TryParse(
-                    val[2..^1],
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out var _))
+            string err;
+            
+            if(token.Type == SQLTokenType.DateLiteral)
             {
-                throw new SyntaxErrorException(
-                    ErrorFormatter.Create(
+                val = val[2..^1]; // remove d'...'
+
+                if(!DateOnly.TryParseExact(val, SQLDictionary.DateFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+                {
+                    err = ErrorFormatter.Create(
                         _helper.Input,
                         token.StartPosition,
-                        $"Invalid DateTime literal '{val}'",
-                        errorTextLength: token.Length));
+                        $"Invalid datetime format '{_helper.GetSlice(token)}'. Use format 'yyyy-MM-dd'",
+                        errorTextLength: token.Length);
+
+                    throw new SyntaxErrorException(err);
+                }
+                
+                return new LiteralExpression
+                {
+                    Span = CreateSpan(token),
+                    Value = date,
+                    Type = SQLLiteralType.Date
+                };
+            }
+            else if (token.Type == SQLTokenType.TimeLiteral)
+            {
+                val = val[2..^1]; // remove t'...'
+
+                if (!TimeOnly.TryParseExact(val, SQLDictionary.TimeFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var time))
+                {
+                    err = ErrorFormatter.Create(
+                        _helper.Input,
+                        token.StartPosition,
+                        $"Invalid time format '{_helper.GetSlice(token)}'. Use format 'HH:mm:ss.FFFFFFF'",
+                        errorTextLength: token.Length);
+
+                    throw new SyntaxErrorException(err);
+                }
+
+                return new LiteralExpression
+                {
+                    Span = CreateSpan(token),
+                    Value = time,
+                    Type = SQLLiteralType.Time
+                };
+            }
+            else if (token.Type == SQLTokenType.DatetimeLiteral)
+            {
+                val = val[3..^1]; // remove dt'...'
+
+                if (!DateTime.TryParseExact(val, SQLDictionary.DateTimeFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dateTime))
+                {
+                    err = ErrorFormatter.Create(
+                        _helper.Input,
+                        token.StartPosition,
+                        $"Invalid dateTime format '{_helper.GetSlice(token)}'. Use format 'yyyy-MM-dd HH:mm:ss.FFFFFFF'",
+                        errorTextLength: token.Length);
+
+                    throw new SyntaxErrorException(err);
+                }
+
+                return new LiteralExpression
+                {
+                    Span = CreateSpan(token),
+                    Value = dateTime,
+                    Type = SQLLiteralType.Datetime
+                };
             }
 
-            return new LiteralExpression
-            {
-                Span = CreateSpan(token),
-                Value = UnescapeStringLiteral(val),
-                Type = SQLLiteralType.Datetime
-            };
+            err = ErrorFormatter.Create(
+                _helper.Input,
+                token.StartPosition,
+                $"Unexpected token type '{token.Type}'. Expected a date, time, or datetime literal.",
+                errorTextLength: token.Length);
+
+            throw new SyntaxErrorException(err);
         }
         private bool IsPredicateNot()
         {
@@ -877,52 +936,6 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 Start = startPosition,
                 Length = endPosition - startPosition
             };
-        }
-        private static string UnescapeStringLiteral(ReadOnlySpan<char> slice)
-        {
-            if (slice.Length >= 3 && (slice[0] == 'N' || slice[0] == 'n' || slice[0] == 'd' || slice[0] == 'D') && slice[1] == '\'' && slice[^1] == '\'')
-            {
-                slice = slice[2..^1];
-            }
-
-            else if (slice.Length >= 2 && slice[0] == '\'' && slice[^1] == '\'')
-            {
-                slice = slice[1..^1];
-            }
-
-            if (slice.IndexOf("''", StringComparison.Ordinal) < 0)
-            {
-                return slice.ToString();
-            }
-
-            return slice.ToString().Replace("''", "'");
-        }
-        private static string UnescapeIdentifier(ReadOnlySpan<char> slice)
-        {
-            if (slice.Length >= 2)
-            {
-                if (slice[0] == '"' && slice[^1] == '"')
-                {
-                    slice = slice[1..^1];
-
-                    if (slice.IndexOf("\"\"", StringComparison.Ordinal) < 0)
-                        return slice.ToString();
-
-                    return slice.ToString().Replace("\"\"", "\"");
-                }
-
-                if (slice[0] == '[' && slice[^1] == ']')
-                {
-                    slice = slice[1..^1];
-
-                    if (slice.IndexOf("]]", StringComparison.Ordinal) < 0)
-                        return slice.ToString();
-
-                    return slice.ToString().Replace("]]", "]");
-                }
-            }
-
-            return slice.ToString();
         }
     }
 }

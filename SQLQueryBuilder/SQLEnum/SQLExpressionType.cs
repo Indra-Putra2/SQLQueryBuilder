@@ -5,8 +5,12 @@
         Unknown,
         NullLiteral,
         Boolean,
-        Number,
+        Integer,
+        Decimal,
+        Double,
         String,
+        Date,
+        Time,
         DateTime,
         Guid,
         Binary

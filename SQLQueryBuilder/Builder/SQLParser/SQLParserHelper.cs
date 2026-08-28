@@ -1,6 +1,6 @@
 ﻿using SQLQueryBuilder.Model;
 using SQLQueryBuilder.SQLEnum;
-using System.Text;
+using System.Collections.Frozen;
 
 namespace SQLQueryBuilder.Builder.SQLParser
 {
@@ -11,65 +11,6 @@ namespace SQLQueryBuilder.Builder.SQLParser
         public int Index { get; private set; } = 0;
         public string Input => _context.OriginalText;
         public ReadOnlySpan<char> GetSlice(SQLToken token) => _context.GetSlice(token);
-        // Private Variables
-        public static readonly Dictionary<SQLTokenType, SQLBinaryOperator> ComparisonOperators =
-        new()
-        {
-            [SQLTokenType.Equal] = SQLBinaryOperator.Equal,
-            [SQLTokenType.NotEqual] = SQLBinaryOperator.NotEqual,
-            [SQLTokenType.LessThan] = SQLBinaryOperator.LessThan,
-            [SQLTokenType.LessThanOrEqual] = SQLBinaryOperator.LessThanOrEqual,
-            [SQLTokenType.GreaterThan] = SQLBinaryOperator.GreaterThan,
-            [SQLTokenType.GreaterThanOrEqual] = SQLBinaryOperator.GreaterThanOrEqual,
-        };
-        // Definitions
-        public static readonly HashSet<SQLTokenType> DelimitedIdentifiers =
-        [
-            SQLTokenType.BracketIdentifier,
-            SQLTokenType.DoubleQuoteIdentifier,
-        ];
-        public static readonly HashSet<SQLTokenType> Identifiers =
-        [
-            SQLTokenType.Identifier,
-            ..DelimitedIdentifiers
-        ];
-
-        public static readonly HashSet<SQLTokenType> Number =
-        [
-            SQLTokenType.IntegerLiteral,
-            SQLTokenType.DecimalLiteral,
-            SQLTokenType.ScientificLiteral,
-        ];
-        public static readonly HashSet<SQLTokenType> Literals =
-        [
-            ..Number,
-            SQLTokenType.StringLiteral,
-            SQLTokenType.UnicodeString,
-            SQLTokenType.DatetimeLiteral,
-            SQLTokenType.HexLiteral,
-            SQLTokenType.MoneyLiteral,
-            SQLTokenType.NullLiteral
-        ];
-        public static readonly HashSet<SQLTokenType> Comparison =
-        [
-            SQLTokenType.Equal,
-            SQLTokenType.NotEqual,
-            SQLTokenType.LessThan,
-            SQLTokenType.LessThanOrEqual,
-            SQLTokenType.GreaterThan,
-            SQLTokenType.GreaterThanOrEqual,
-        ];
-        public static readonly HashSet<SQLTokenType> DelimitersAndTerminators =
-        [
-            SQLTokenType.Comma,
-            SQLTokenType.Semicolon,
-            SQLTokenType.EOF,
-        ];
-        public static readonly HashSet<SQLTokenType> AllowedAliases =
-        [
-            ..Identifiers,
-            SQLTokenType.StringLiteral,
-        ];
 
         //Methods
         public SQLParserHelper(SQLQueryContext context)
@@ -99,37 +40,75 @@ namespace SQLQueryBuilder.Builder.SQLParser
         public bool IsAtEnd => Index >= _context.Tokens.Count;
 
         public bool Expect(SQLToken current, SQLTokenType expectedToken) => current.Type == expectedToken;
-        public bool Expects(SQLToken current, HashSet<SQLTokenType> expectedTokens) => expectedTokens.Contains(current.Type);
+        public bool Expects(SQLToken current, FrozenSet<SQLTokenType> expectedTokens) => expectedTokens.Contains(current.Type);
         public bool IsKeyword(SQLToken token, string keyword)
         {
             return Expect(token, SQLTokenType.Keyword) && _context.GetSlice(token).Equals(keyword, StringComparison.OrdinalIgnoreCase);
         }
-        public static bool TryGetSQLType(ReadOnlySpan<char> typeSpan, out SQLFunctionType type)
+
+        public static string UnescapeStringLiteral(ReadOnlySpan<char> slice)
         {
-            switch (typeSpan)
+            if (slice.Length >= 3 && (slice[0] == 'N' || slice[0] == 'n' || slice[0] == 'd' || slice[0] == 'D') && slice[1] == '\'' && slice[^1] == '\'')
             {
-                case var _ when typeSpan.Equals("NUMBER", StringComparison.OrdinalIgnoreCase):
-                    type = SQLFunctionType.Number;
-                    return true;
-                case var _ when typeSpan.Equals("STRING", StringComparison.OrdinalIgnoreCase):
-                    type = SQLFunctionType.String;
-                    return true;
-                case var _ when typeSpan.Equals("BOOL", StringComparison.OrdinalIgnoreCase):
-                    type = SQLFunctionType.Boolean;
-                    return true;
-                case var _ when typeSpan.Equals("GUID", StringComparison.OrdinalIgnoreCase):
-                    type = SQLFunctionType.Guid;
-                    return true;
-                case var _ when typeSpan.Equals("DATETIME", StringComparison.OrdinalIgnoreCase):
-                    type = SQLFunctionType.DateTime;
-                    return true;
-                case var _ when typeSpan.Equals("BINARY", StringComparison.OrdinalIgnoreCase):
-                    type = SQLFunctionType.Binary;
-                    return true;
-                default:
-                    type = SQLFunctionType.Unknown;
-                    return false;
+                slice = slice[2..^1];
             }
+
+            else if (slice.Length >= 2 && slice[0] == '\'' && slice[^1] == '\'')
+            {
+                slice = slice[1..^1];
+            }
+
+            if (slice.IndexOf("''", StringComparison.Ordinal) < 0)
+            {
+                return slice.ToString();
+            }
+
+            return slice.ToString().Replace("''", "'");
+        }
+        public static string UnescapeIdentifier(ReadOnlySpan<char> slice)
+        {
+            if (slice.Length >= 2)
+            {
+                if (slice[0] == '"' && slice[^1] == '"')
+                {
+                    slice = slice[1..^1];
+
+                    if (slice.IndexOf("\"\"", StringComparison.Ordinal) < 0)
+                        return slice.ToString();
+
+                    return slice.ToString().Replace("\"\"", "\"");
+                }
+
+                if (slice[0] == '[' && slice[^1] == ']')
+                {
+                    slice = slice[1..^1];
+
+                    if (slice.IndexOf("]]", StringComparison.Ordinal) < 0)
+                        return slice.ToString();
+
+                    return slice.ToString().Replace("]]", "]");
+                }
+            }
+
+            return slice.ToString();
+        }
+        public static string EscapeStringLiteral(string value)
+        {
+            if (value.IndexOf('\'') < 0)
+            {
+                return $"'{value.ToString()}'";
+            }
+
+            return $"'{value.ToString().Replace("'", "''")}'";
+        }
+        public static string EscapeIdentifier(string value)
+        {
+            if (value.IndexOf('"') < 0)
+            {
+                return $"\"{value.ToString()}\"";
+            }
+
+            return $"\"{value.ToString().Replace("\"", "\"\"")}\"";
         }
     }
 }

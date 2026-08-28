@@ -7,6 +7,7 @@ namespace SQLQueryBuilder.Model
 {
     internal class SQLTableManager
     {
+        private NullabilityInfoContext _nullabilityContext = new NullabilityInfoContext();
         private Dictionary<string, Dictionary<string, SQLColumnMetadata>> _tables { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
         public void RegisterTable(string tableAlias, Type type)
@@ -27,7 +28,7 @@ namespace SQLQueryBuilder.Model
             {
                 var name = prop.Name;
                 var nullable = IsNullable(prop);
-                var expressionType = MapType(prop.PropertyType);
+                var expressionType = SQLDictionary.GetExpressionType(prop.PropertyType);
 
                 columns[name] = new SQLColumnMetadata { IsNullable = nullable, ExpressionType = expressionType};
             }
@@ -63,52 +64,9 @@ namespace SQLQueryBuilder.Model
             return new ReadOnlyDictionary<string, ReadOnlyDictionary<string, SQLColumnMetadata>>(readOnlyCopy);
         }
 
-        private SQLExpressionType MapType(Type type)
-        {
-            type = Nullable.GetUnderlyingType(type) ?? type;
-
-            if (type == typeof(char))
-                return SQLExpressionType.String;
-
-            else if (type == typeof(string))
-                return SQLExpressionType.String;
-
-            else if (type == typeof(bool))
-                return SQLExpressionType.Boolean;
-
-            else if (type == typeof(DateTime) || type == typeof(DateTimeOffset))
-                return SQLExpressionType.DateTime;
-
-            else if (type == typeof(Guid))
-                return SQLExpressionType.Guid;
-
-            else if (type == typeof(byte[]))
-                return SQLExpressionType.Binary;
-
-            else if (type == typeof(short))
-                return SQLExpressionType.Number;
-
-            else if (type == typeof(int))
-                return SQLExpressionType.Number;
-
-            else if (type == typeof(long))
-                return SQLExpressionType.Number;
-
-            else if (type == typeof(float))
-                return SQLExpressionType.Number;
-
-            else if (type == typeof(double))
-                return SQLExpressionType.Number;
-
-            else if (type == typeof(decimal))
-                return SQLExpressionType.Number;
-
-            return SQLExpressionType.Unknown;
-        }
         private bool IsNullable(PropertyInfo prop)
         {
-            var nullabilityContext = new NullabilityInfoContext();
-            var nullability = nullabilityContext.Create(prop);
+            var nullability = _nullabilityContext.Create(prop);
             return nullability.ReadState == NullabilityState.Nullable;
         }
     }

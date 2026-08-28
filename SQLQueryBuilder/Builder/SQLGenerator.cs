@@ -1,4 +1,5 @@
-﻿using SQLQueryBuilder.Model;
+﻿using SQLQueryBuilder.Builder.SQLParser;
+using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
 using System.Text;
@@ -9,6 +10,7 @@ namespace SQLQueryBuilder.Builder
     {
         private readonly StringBuilder _query = new();
         private int _indent = 0;
+        private SQLQueryResult _result = new();
         #region SQL Builder
         private void BuildSelect(SQLQuery sqlQuery)
         {
@@ -55,7 +57,7 @@ namespace SQLQueryBuilder.Builder
                     _query.Append($" AS {join.Table.Alias}");
 
                 _query.Append(" ON ");
-                WriteExpression(join.Condition);
+                WriteExpression(join.Condition, true);
             }
         }
         private void BuildHaving(SQLQuery sqlQuery)
@@ -64,7 +66,7 @@ namespace SQLQueryBuilder.Builder
 
             NewLine();
             _query.Append("HAVING ");
-            WriteExpression(sqlQuery.Having);
+            WriteExpression(sqlQuery.Having, true);
         }
         private void BuildWhere(SQLQuery sqlQuery)
         {
@@ -72,7 +74,7 @@ namespace SQLQueryBuilder.Builder
 
             NewLine();
             _query.Append("WHERE ");
-            WriteExpression(sqlQuery.Where);
+            WriteExpression(sqlQuery.Where, true);
         }
         private void BuildGroupBy(SQLQuery sqlQuery)
         {
@@ -118,7 +120,11 @@ namespace SQLQueryBuilder.Builder
             return _query.ToString();
         }
 
-        public string Build() => _query.ToString();
+        public SQLQueryResult Build()
+        {
+            _result.SetSQL(_query.ToString());
+            return _result;
+        }
         #endregion
         #region SQL Expression Writer
         private void WriteExpression(SQLExpression expression, bool parameterize = false)
@@ -126,59 +132,59 @@ namespace SQLQueryBuilder.Builder
             switch (expression)
             {
                 case ColumnExpression column:
-                    WriteColumn(column);
+                    WriteColumn(column, parameterize);
                     break;
 
                 case LiteralExpression literal:
-                    WriteLiteral(literal);
+                    WriteLiteral(literal, parameterize);
                     break;
 
                 case BinaryExpression binary:
-                    WriteBinary(binary);
+                    WriteBinary(binary, parameterize);
                     break;
 
                 case UnaryExpression unary:
-                    WriteUnary(unary);
+                    WriteUnary(unary, parameterize);
                     break;
 
                 case FunctionExpression function:
-                    WriteFunction(function);
+                    WriteFunction(function, parameterize);
                     break;
 
                 case CaseExpression @case:
-                    WriteCase(@case);
+                    WriteCase(@case, parameterize);
                     break;
 
                 case WildcardExpression wildcard:
-                    WriteWildcard(wildcard);
+                    WriteWildcard(wildcard, parameterize);
                     break;
 
                 case IsNullExpression isNull:
-                    WriteIsNull(isNull);
+                    WriteIsNull(isNull, parameterize);
                     break;
 
                 case LikeExpression like:
-                    WriteLike(like);
+                    WriteLike(like, parameterize);
                     break;
 
                 case InExpression @in:
-                    WriteIn(@in);
+                    WriteIn(@in, parameterize);
                     break;
 
                 case BetweenExpression between:
-                    WriteBetween(between);
+                    WriteBetween(between, parameterize);
                     break;
 
                 case SelectExpression select:
-                    WriteSelectExpression(select);
+                    WriteSelectExpression(select, parameterize);
                     break;
 
                 case OrderByExpression orderBy:
-                    WriteOrderByExpression(orderBy);
+                    WriteOrderByExpression(orderBy, parameterize);
                     break;
 
                 case ParenthesizedExpression parenthesized:
-                    WriteParenthesized(parenthesized);
+                    WriteParenthesized(parenthesized, parameterize);
                     break;
 
                 default:
@@ -186,41 +192,68 @@ namespace SQLQueryBuilder.Builder
                         $"SQL expression type '{expression.GetType().Name}' is not supported.");
             }
         }
-        private void WriteColumn(ColumnExpression expression)
+        private void WriteLiteral(LiteralExpression expression, bool parameterize)
         {
-            var table = expression.Table == null ? "" : string.Join(".", expression.Table);
-            _query.Append(table).Append(".").Append(expression.Column);
-        }
-        private void WriteLiteral(LiteralExpression expression, bool parameterize = false)
-        {
+            if (TryWriteParameter(expression.Value, parameterize))
+                return;
+
             switch (expression.Type)
             {
                 case SQLLiteralType.Money:
-                    _query.Append("$").Append(expression.Value);
+                    _query.Append('$').Append(expression.Value);
                     break;
+
                 case SQLLiteralType.BinaryLiteral:
                     _query.Append("0x").Append(expression.Value);
                     break;
+
                 case SQLLiteralType.UnicodeString:
-                    _query.Append("N").Append($"'{expression.Value}'");
+                    _query.Append("N")
+                          .Append(SQLParserHelper.EscapeStringLiteral((string)expression.Value));
                     break;
+
                 case SQLLiteralType.String:
+                    _query.Append(
+                        SQLParserHelper.EscapeStringLiteral((string)expression.Value));
+                    break;
+
                 case SQLLiteralType.Scientific:
-                case SQLLiteralType.Datetime:
-                    _query.Append($"'{expression.Value}'");
-                    break;
-                case SQLLiteralType.Null:
-                    _query.Append("NULL");
-                    break;
                 case SQLLiteralType.Decimal:
                 case SQLLiteralType.Integer:
                     _query.Append(expression.Value);
                     break;
+
+                case SQLLiteralType.Date:
+                    _query.Append("CAST('")
+                          .Append(((DateOnly)expression.Value).ToString("yyyy-MM-dd"))
+                          .Append("' AS DATE)");
+                    break;
+
+                case SQLLiteralType.Time:
+                    _query.Append("CAST('")
+                          .Append(((TimeOnly)expression.Value).ToString("HH:mm:ss.FFFFFFF"))
+                          .Append("' AS TIME)");
+                    break;
+
+                case SQLLiteralType.Datetime:
+                    _query.Append("CAST('")
+                          .Append(((DateTime)expression.Value).ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF"))
+                          .Append("' AS DATETIME2)");
+                    break;
+
+                case SQLLiteralType.Null:
+                    _query.Append("NULL");
+                    break;
             }
         }
-        private void WriteBinary(BinaryExpression expression)
+        private void WriteColumn(ColumnExpression expression, bool parameterize)
         {
-            WriteExpression(expression.Left);
+            var table = expression.Table == null ? "" : string.Join(".", expression.Table);
+            _query.Append(table).Append(".").Append(expression.Column);
+        }
+        private void WriteBinary(BinaryExpression expression, bool parameterize)
+        {
+            WriteExpression(expression.Left, parameterize);
             string op = expression.Operator switch
             {
                 //Logical
@@ -254,10 +287,26 @@ namespace SQLQueryBuilder.Builder
 
             _query.Append(' ').Append(op).Append(' ');
 
-            WriteExpression(expression.Right);
+            WriteExpression(expression.Right, parameterize);
         }
-        private void WriteUnary(UnaryExpression expression)
+        private void WriteUnary(UnaryExpression expression, bool parameterize)
         {
+            if (parameterize &&
+            expression.Operand is LiteralExpression literal &&
+            expression.Operator is SQLUnaryOperator.Positive or SQLUnaryOperator.Negative)
+            {
+                var value = literal.Value;
+
+                if (expression.Operator == SQLUnaryOperator.Negative)
+                {
+                    value = Negate(value);
+                }
+
+                TryWriteParameter(value, true);
+                return;
+            }
+
+
             var op = expression.Operator switch
             {
                 SQLUnaryOperator.Positive => "+",
@@ -270,9 +319,9 @@ namespace SQLQueryBuilder.Builder
             string space = expression.Operator == SQLUnaryOperator.NOT ? " " : "";
             _query.Append(op).Append(space);
 
-            WriteExpression(expression.Operand);
+            WriteExpression(expression.Operand, parameterize);
         }
-        private void WriteFunction(FunctionExpression expression)
+        private void WriteFunction(FunctionExpression expression, bool parameterize)
         {
             _query.Append(expression.Name).Append("(");
 
@@ -281,18 +330,18 @@ namespace SQLQueryBuilder.Builder
                 if (i > 0)
                     _query.Append(", ");
 
-                WriteExpression(expression.Arguments[i]);
+                WriteExpression(expression.Arguments[i], parameterize);
             }
 
             _query.Append(")");
         }
-        private void WriteCase(CaseExpression expression)
+        private void WriteCase(CaseExpression expression, bool parameterize)
         {
             _query.Append("CASE ");
 
             if (expression.BaseExpression != null)
             {
-                WriteExpression(expression.BaseExpression);
+                WriteExpression(expression.BaseExpression, parameterize);
                 _query.Append(' ');
             }
 
@@ -302,10 +351,10 @@ namespace SQLQueryBuilder.Builder
                 NewLine();
                 IndentedLine();
                 _query.Append("WHEN ");
-                WriteExpression(c.Condition);
+                WriteExpression(c.Condition, parameterize);
 
                 _query.Append(" THEN ");
-                WriteExpression(c.Result);
+                WriteExpression(c.Result, parameterize);
             }
 
             if (expression.ElseExpression != null)
@@ -313,14 +362,14 @@ namespace SQLQueryBuilder.Builder
                 NewLine();
                 IndentedLine();
                 _query.Append("ELSE ");
-                WriteExpression(expression.ElseExpression);
+                WriteExpression(expression.ElseExpression, parameterize);
             }
             _indent--;
             NewLine();
             IndentedLine();
             _query.Append("END");
         }
-        private void WriteWildcard(WildcardExpression expression)
+        private void WriteWildcard(WildcardExpression expression, bool parameterize)
         {
             if (expression.TableAlias != null)
             {
@@ -329,9 +378,9 @@ namespace SQLQueryBuilder.Builder
 
             _query.Append("*");
         }
-        private void WriteIsNull(IsNullExpression expression)
+        private void WriteIsNull(IsNullExpression expression, bool parameterize)
         {
-            WriteExpression(expression.Operand);
+            WriteExpression(expression.Operand, parameterize);
             _query.Append(" IS");
 
             if (expression.IsNot)
@@ -339,19 +388,19 @@ namespace SQLQueryBuilder.Builder
 
             _query.Append(" NULL");
         }
-        private void WriteLike(LikeExpression expression)
+        private void WriteLike(LikeExpression expression, bool parameterize)
         {
-            WriteExpression(expression.Operand);
+            WriteExpression(expression.Operand, parameterize);
 
             if (expression.IsNot)
                 _query.Append(" NOT");
             _query.Append(" LIKE ");
 
-            WriteExpression(expression.Pattern);
+            WriteExpression(expression.Pattern, parameterize);
         }
-        private void WriteIn(InExpression expression)
+        private void WriteIn(InExpression expression, bool parameterize)
         {
-            WriteExpression(expression.Operand);
+            WriteExpression(expression.Operand, parameterize);
             if (expression.IsNot)
                 _query.Append(" NOT");
             _query.Append(" IN (");
@@ -363,45 +412,45 @@ namespace SQLQueryBuilder.Builder
                     if (i > 0)
                         _query.Append(", ");
 
-                    WriteExpression(expression.Values[i]);
+                    WriteExpression(expression.Values[i], parameterize);
                 }
 
                 _query.Append(")");
             }
             else
             {
-                WriteExpression(expression.Values[0]);
+                WriteExpression(expression.Values[0], parameterize);
                 _query.Append(")");
             }
         }
-        private void WriteBetween(BetweenExpression expression)
+        private void WriteBetween(BetweenExpression expression, bool parameterize)
         {
-            WriteExpression(expression.Operand);
+            WriteExpression(expression.Operand, parameterize);
             if (expression.IsNot)
                 _query.Append(" NOT");
             _query.Append(" BETWEEN ");
-            WriteExpression(expression.Lower);
+            WriteExpression(expression.Lower, parameterize);
             _query.Append(" AND ");
-            WriteExpression(expression.Upper);
+            WriteExpression(expression.Upper, parameterize);
         }
-        private void WriteSelectExpression(SelectExpression expression)
+        private void WriteSelectExpression(SelectExpression expression, bool parameterize)
         {
-            WriteExpression(expression.Expression);
+            WriteExpression(expression.Expression, parameterize);
             if (expression.Alias != null)
                 _query.Append($" AS {expression.Alias}");
         }
-        private void WriteOrderByExpression(OrderByExpression expression)
+        private void WriteOrderByExpression(OrderByExpression expression, bool parameterize)
         {
-            WriteExpression(expression.Expression);
+            WriteExpression(expression.Expression, parameterize);
             if (expression.Descending)
                 _query.Append(" DESC");
             else
                 _query.Append(" ASC");
         }
-        private void WriteParenthesized(ParenthesizedExpression expression)
+        private void WriteParenthesized(ParenthesizedExpression expression, bool parameterize)
         {
             _query.Append("(");
-            WriteExpression(expression.Expression);
+            WriteExpression(expression.Expression, parameterize);
             _query.Append(")");
         }
         #endregion
@@ -413,6 +462,32 @@ namespace SQLQueryBuilder.Builder
         private void IndentedLine()
         {
             _query.Append('\t', _indent);
+        }
+        private bool TryWriteParameter(object value, bool parameterize)
+        {
+            if (!parameterize)
+                return false;
+
+            string paramName = $"@p{_result.NextParameterIndex()}";
+
+            _query.Append(paramName);
+            _result.AddParameter(paramName, value);
+
+            return true;
+        }
+        private static object Negate(object value)
+        {
+            return value switch
+            {
+                int v => -v,
+                long v => -v,
+                float v => -v,
+                double v => -v,
+                decimal v => -v,
+
+                _ => throw new InvalidOperationException(
+                    $"Cannot negate value of type {value.GetType().Name}.")
+            };
         }
         #endregion
         // Currently Unsupported

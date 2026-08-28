@@ -71,14 +71,14 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
         private SQLToken? ParseAlias()
         {
-            if (!_helper.IsAtEnd && _helper.Expects(_helper.Current, SQLParserHelper.DelimitersAndTerminators)) return null;
+            if (!_helper.IsAtEnd && _helper.Expects(_helper.Current, SQLDictionary.DelimitersAndTerminators)) return null;
 
             if (_helper.IsKeyword(_helper.Current, "AS"))
             {
                 _helper.Consume(); // Consume AS
             }
 
-            if (!_helper.Expects(_helper.Current, SQLParserHelper.AllowedAliases))
+            if (!_helper.Expects(_helper.Current, SQLDictionary.AllowedAliases))
             {
                 var err = ErrorFormatter.Create(
                     _helper.Input,

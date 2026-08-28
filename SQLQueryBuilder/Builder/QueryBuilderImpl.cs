@@ -16,12 +16,12 @@ namespace SQLQueryBuilder.Builder
         private SQLSemanticValidator _validator;
         private SQLGenerator _queryGenerator;
 
-        internal QueryBuilderImpl(SQLValidationMode mode)
+        internal QueryBuilderImpl()
         {
             _baseValidated = false;
             _queryGenerator = new SQLGenerator();
             _builderHelper = new SQLBuilderHelper();
-            _validator = new SQLSemanticValidator(mode);
+            _validator = new SQLSemanticValidator();
             _query = new SQLQuery
             {
                 OutputDTO = typeof(TBase)
@@ -107,17 +107,11 @@ namespace SQLQueryBuilder.Builder
                 _queryGenerator.BuildBaseQuery(_query);
                 _baseValidated = true;
             }
-                
+
             _validator.ValidateClauses(_query);
             _queryGenerator.BuildClauses(_query);
 
-            var queryData = new SQLQueryResult
-            {
-                SQL = _queryGenerator.Build(),
-                Parameters = null
-            };
-
-            return queryData;
+            return _queryGenerator.Build();
         }
 
         private string GetTableName<T>()
