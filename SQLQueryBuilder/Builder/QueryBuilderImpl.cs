@@ -1,9 +1,9 @@
 ﻿using SQLQueryBuilder.Builder.SQLParser;
 using SQLQueryBuilder.Interface;
 using SQLQueryBuilder.Model;
+using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
 using System.ComponentModel.DataAnnotations.Schema;
-using System.Data;
 using System.Reflection;
 
 namespace SQLQueryBuilder.Builder
@@ -30,12 +30,20 @@ namespace SQLQueryBuilder.Builder
 
         public IQuerySelect From<T>(string tableAlias)
         {
-            var name = _builderHelper.BuildFrom(GetTableName<T>());
-            _query.From = new TableSource
+            var rawName = GetTableName<T>();
+            var name = _builderHelper.BuildFrom(rawName);
+
+            var table = new TableSource
             {
                 Type = typeof(T),
                 TableName = name,
-                Alias = ParseAlias(tableAlias)
+                Alias = _builderHelper.BuildAlias(tableAlias)
+            };
+
+            _query.From = new Source<TableSource>
+            {
+                OriginalText = rawName,
+                Value = table
             };
 
             return this;
@@ -43,7 +51,11 @@ namespace SQLQueryBuilder.Builder
 
         public IQuery Select(string colums)
         {
-            _query.Select = _builderHelper.BuildSelect(colums);
+            _query.Select = new Source<List<SelectExpression>>
+            {
+                OriginalText = colums,
+                Value = _builderHelper.BuildSelect(colums)
+            };
             return this;
         }
         public IQuery Join<T>(string tableAlias, string joinCondition, SQLJoinType joinType = SQLJoinType.INNER)
@@ -54,7 +66,7 @@ namespace SQLQueryBuilder.Builder
             {
                 Type = typeof(T),
                 TableName = name,
-                Alias = ParseAlias(tableAlias)
+                Alias = _builderHelper.BuildAlias(tableAlias)
             };
 
             var join = new JoinSource
@@ -64,30 +76,46 @@ namespace SQLQueryBuilder.Builder
                 JoinType = joinType
             };
 
-            _query.Joins.Add(join);
+            _query.Joins.Add(new Source<JoinSource> { OriginalText = joinCondition, Value = join });
             return this;
         }
         public IQueryFilter GroupBy(string groupBy)
         {
-            _query.GroupBy = _builderHelper.BuildGroupBy(groupBy);
+            _query.GroupBy = new Source<List<SQLExpression>>
+            {
+                OriginalText = groupBy,
+                Value = _builderHelper.BuildGroupBy(groupBy)
+            };
             return this;
         }
 
         public IQueryFilter OrderBy(string orderBy)
         {
-            _query.OrderBy = _builderHelper.BuildOrderBy(orderBy); ;
+            _query.OrderBy = new Source<List<OrderByExpression>>
+            {
+                OriginalText = orderBy,
+                Value = _builderHelper.BuildOrderBy(orderBy)
+            };
             return this;
         }
 
         public IQueryFilter Where(string where)
         {
-            _query.Where = _builderHelper.BuildExpression(where);
+            _query.Where = new Source<SQLExpression>
+            {
+                OriginalText = where,
+                Value = _builderHelper.BuildExpression(where)
+            };
             return this;
         }
 
         public IQueryFilter Having(string having)
         {
-            _query.Having = _builderHelper.BuildExpression(having);
+            _query.Having = new Source<SQLExpression>
+            {
+                OriginalText = having,
+                Value = _builderHelper.BuildExpression(having)
+            };
             return this;
         }
 
@@ -118,35 +146,6 @@ namespace SQLQueryBuilder.Builder
         {
             var type = typeof(T);
             return type.GetCustomAttribute<TableAttribute>()?.Name ?? type.Name;
-        }
-
-        private string ParseAlias(string alias)
-        {
-            if (string.IsNullOrWhiteSpace(alias))
-                throw new ArgumentNullException("Alias cannot be null!");
-
-            var context = _builderHelper.BuildTokens(alias);
-
-            if (context.Tokens.Count != 2)
-            {
-                throw new SyntaxErrorException(
-                    $"'{alias}' is not a valid alias.");
-            }
-
-            var token = context.Tokens[0];
-
-            bool validAlias =
-                token.Type == SQLTokenType.Identifier ||
-                token.Type == SQLTokenType.BracketIdentifier ||
-                token.Type == SQLTokenType.DoubleQuoteIdentifier;
-
-            if (!validAlias || context.Tokens[1].Type != SQLTokenType.EOF)
-            {
-                throw new SyntaxErrorException(
-                    $"'{alias}' is not a valid alias.");
-            }
-
-            return context.GetSlice(context.Tokens[0]).ToString();
         }
     }
 }

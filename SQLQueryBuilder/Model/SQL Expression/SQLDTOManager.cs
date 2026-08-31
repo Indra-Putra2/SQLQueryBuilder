@@ -31,31 +31,54 @@ namespace SQLQueryBuilder.Model.SQL_Expression
 
         public void RegisterOutput(string alias, SQLExpressionMetadata metadata)
         {
-
             if (!_properties.TryGetValue(alias, out var property))
                 throw new SyntaxErrorException(
                     $"DTO property '{alias}' does not exist.");
 
-            var propType = property.PropertyType;
-            var type = SQLDictionary.GetCLRType(metadata.Type);
-            if (type != null && type != propType)
+            var sqlType = SQLDictionary.GetCLRType(metadata.Type);
+            var dtoType = property.PropertyType;
+
+            if (sqlType != null)
             {
-                throw new SyntaxErrorException(
-                    $"Output column '{alias}' has type '{type}', " +
-                    $"but DTO property '{alias}' expects type '{propType}'.");
+                var dtoUnderlyingType = Nullable.GetUnderlyingType(dtoType);
+
+                // For value types, decimal? → decimal.
+                // For normal types, dtoUnderlyingType is null.
+                var actualDtoType = dtoUnderlyingType ?? dtoType;
+
+                if (actualDtoType != sqlType)
+                {
+                    throw new SyntaxErrorException(
+                        $"Output column '{alias}' has type '{sqlType}', " +
+                        $"but DTO property '{alias}' expects type '{dtoType}'.");
+                }
             }
 
             var nullability = _nullabilityContext.Create(property);
-            if (metadata.IsNullable && nullability.ReadState == NullabilityState.NotNull)
+
+            if (metadata.IsNullable)
             {
-                throw new SyntaxErrorException(
-                    $"Output column '{alias}' may return NULL, " +
-                    $"but DTO property '{alias}' is non-nullable.");
+                // Nullable<T>
+                if (dtoType.IsValueType)
+                {
+                    if (Nullable.GetUnderlyingType(dtoType) == null)
+                    {
+                        throw new SyntaxErrorException(
+                            $"Output column '{alias}' may return NULL, " +
+                            $"but DTO property '{alias}' is non-nullable.");
+                    }
+                }
+                // string?, byte[]?, etc.
+                else if (nullability.ReadState == NullabilityState.NotNull)
+                {
+                    throw new SyntaxErrorException(
+                        $"Output column '{alias}' may return NULL, " +
+                        $"but DTO property '{alias}' is non-nullable.");
+                }
             }
 
             if (!_usedOutputNames.Add(alias))
-                throw new SyntaxErrorException(
-                    $"Duplicate output column name '{alias}' is not allowed.");
+                throw new SyntaxErrorException($"Duplicate output column name '{alias}' is not allowed.");
         }
     }
 }

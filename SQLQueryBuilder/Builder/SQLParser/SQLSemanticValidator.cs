@@ -2,7 +2,6 @@
 using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
 using System.Data;
-using System.Data.Common;
 using System.Diagnostics;
 
 namespace SQLQueryBuilder.Builder.SQLParser
@@ -11,7 +10,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
     {
         private SQLTableManager _tableManager;
         private SQLDTOManager _dtoManager;
-        private SQLQueryContext context;
+        private string _originalText = string.Empty;
 
         public SQLSemanticValidator()
         {
@@ -20,106 +19,116 @@ namespace SQLQueryBuilder.Builder.SQLParser
         }
 
         #region Validation
-        public void ValidateQuery(SQLQuery query)
-        {
-            ValidateBaseQuery(query);
-            ValidateClauses(query);
-        }
-
         public void ValidateBaseQuery(SQLQuery query)
         {
+            if (query.OutputDTO == null)
+                throw new NullReferenceException("Output Type DTO cannot be null.");
+            
             _dtoManager.RegisterDTO(query.OutputDTO);
-            ValidateFrom(query.From);
-            ValidateJoins(query.Joins);
-            ValidateSelect(query.Select);
+            ValidateFrom(query);
+            ValidateJoins(query);
+            ValidateSelect(query);
         }
 
         public void ValidateClauses(SQLQuery query)
         {
-            ValidateHaving(query.Having, query.GroupBy);
-            ValidateWhere(query.Where);
-            ValidateGroupBy(query.GroupBy);
-            ValidateOrderBy(query.OrderBy);
+            ValidateHaving(query);
+            ValidateWhere(query);
+            ValidateGroupBy(query);
+            ValidateOrderBy(query);
         }
 
-        private void ValidateFrom(TableSource from)
+        private void ValidateFrom(SQLQuery query)
         {
+            if (query.From == null)
+                throw new NullReferenceException("FROM table name cannot be null.");
+
+            var from = query.From.Value;
+
             if (from.TableName.Count == 0)
-            {
-                throw new InvalidOperationException(
-                    "FROM table name cannot be empty.");
-            }
+                throw new InvalidOperationException("FROM table name cannot be empty.");
 
             _tableManager.RegisterTable(from.Alias, from.Type);
         }
 
-        private void ValidateJoins(List<JoinSource> joins)
+        private void ValidateJoins(SQLQuery query)
         {
+            var joins = query.Joins;
+
             if (joins.Count == 0) return;
 
-            foreach (JoinSource join in joins)
+            foreach (var source in joins)
             {
+                var join = source.Value;
                 if (join.Table == null)
-                    throw new InvalidOperationException("JOIN table cannot be null.");
+                    throw new NullReferenceException("JOIN table cannot be null.");
 
                 var table = join.Table;
 
                 if (table.TableName.Count == 0)
-                {
-                    throw new InvalidOperationException(
-                        $"Join table name cannot be empty for {table.Type.Name}.");
-                }
+                    throw new InvalidOperationException($"Join table name cannot be empty for {table.Type.Name}.");
 
                 _tableManager.RegisterTable(join.Table.Alias, join.Table.Type);
+                _originalText = source.OriginalText;
                 AnalyzeExpression(join.Condition);
             }
         }
-        private void ValidateSelect(List<SelectExpression> select)
+        private void ValidateSelect(SQLQuery query)
         {
-            foreach (var selected in select)
+            var source = query.Select;
+            if (source == null) throw new NullReferenceException("Select cannot be null.");
+            if (source.Value.Count == 0) throw new InvalidOperationException("Select cannot be empty.");
+            _originalText = source.OriginalText;
+            foreach (var selected in source.Value)
             {
                 AnalyzeExpression(selected);
             }
         }
 
-        private void ValidateWhere(SQLExpression? where)
+        private void ValidateWhere(SQLQuery query)
         {
-            if (where != null)
-                AnalyzeExpression(where);
+            if (query.Where != null)
+            {
+                _originalText = query.Where.OriginalText;
+                AnalyzeExpression(query.Where.Value);
+            }
         }
 
-        private void ValidateHaving(SQLExpression? having, List<SQLExpression> groupBy)
+        private void ValidateHaving(SQLQuery query)
         {
-            if (having == null)
+            if (query.Having == null)
                 return;
 
-            if (groupBy == null || groupBy.Count == 0)
+            if (query.GroupBy == null || query.GroupBy.Value.Count == 0)
             {
                 throw new InvalidOperationException(
                     "A HAVING clause cannot be used without a GROUP BY clause.");
             }
-
-            AnalyzeExpression(having);
+            _originalText = query.Having.OriginalText;
+            AnalyzeExpression(query.Having.Value);
         }
 
-        private void ValidateGroupBy(List<SQLExpression>? groupBy)
+        private void ValidateGroupBy(SQLQuery query)
         {
-            if (groupBy != null)
+            if (query.GroupBy != null)
             {
-                foreach (var group in groupBy)
+                _originalText = query.GroupBy.OriginalText;
+                foreach (var group in query.GroupBy.Value)
                 {
                     AnalyzeExpression(group);
                 }
             }
         }
 
-        private void ValidateOrderBy(List<OrderByExpression>? orderBy)
+        private void ValidateOrderBy(SQLQuery query)
         {
-            if (orderBy != null)
+            var orderby = query.OrderBy;
+            if (orderby != null)
             {
-                foreach (var order in orderBy)
+                _originalText = orderby.OriginalText;
+                foreach (var order in orderby.Value)
                 {
-                    AnalyzeExpression(order.Expression);
+                    AnalyzeExpression(order);
                 }
             }
         }
@@ -152,9 +161,9 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
                 _ => throw new NotSupportedException(
                     ErrorFormatter.Create(
-                        context.OriginalText, 
-                        expression.Span.Start, 
-                        $"Expression '{expression.GetType().Name}' is not supported.", 
+                        _originalText,
+                        expression.Span.Start,
+                        $"Expression '{expression.GetType().Name}' is not supported.",
                         expression.Span.Length))
             };
         }
@@ -162,10 +171,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
         {
             var metadata = AnalyzeExpression(select.Expression);
 
-            if (metadata.Type == SQLExpressionType.Unknown)
+            if (metadata.Type == SQLExpressionType.Unknown && !metadata.IsWildcard)
             {
                 var err = ErrorFormatter.Create(
-                    context.OriginalText,
+                    _originalText,
                     select.Span.Start,
                     "Cannot determine the type of the SELECT expression.",
                     select.Span.Length);
@@ -190,24 +199,24 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             if (function.DeclaredType == SQLFunctionType.Unknown)
             {
-                var err = ErrorFormatter.Create(context.OriginalText, function.Span.Start, $"Function '{function.Name}' must declare a return type.", function.Span.Length);
+                var err = ErrorFormatter.Create(
+                    _originalText, 
+                    function.Span.Start, 
+                    $"Function '{function.Name}' must declare a return type. e.g.: 'FUNC() TYPE INT? CONST'", 
+                    function.Span.Length);
                 throw new SyntaxErrorException(err);
             }
-
-            bool isConstant = true;
 
             foreach (var arg in function.Arguments)
             {
                 var metadata = AnalyzeExpression(arg);
-
-                isConstant &= metadata.IsConstant;
             }
 
             return new SQLExpressionMetadata
             {
                 Type = SQLDictionary.GetExpressionType(function.DeclaredType),
                 IsNullable = function.IsNullable,
-                IsConstant = isConstant,
+                IsConstant = function.IsConstant,
             };
         }
         private SQLExpressionMetadata AnalyzeUnary(UnaryExpression unary)
@@ -228,12 +237,12 @@ namespace SQLQueryBuilder.Builder.SQLParser
             string err = string.Empty;
             switch (unary.Operator)
             {
-                
+
                 case SQLUnaryOperator.Positive:
                 case SQLUnaryOperator.Negative:
                     if (!SQLDictionary.NumericTypes.Contains(operand.Type))
                     {
-                        err = ErrorFormatter.Create(context.OriginalText, unary.Span.Start, $"Unary operator '{unary.Operator}' cannot be applied to type {operand.Type}.", unary.Span.Length);
+                        err = ErrorFormatter.Create(_originalText, unary.Span.Start, $"Unary operator '{unary.Operator}' cannot be applied to type {operand.Type}.", unary.Span.Length);
                         throw new SyntaxErrorException(err);
                     }
 
@@ -242,14 +251,14 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 case SQLUnaryOperator.NOT:
                     if (operand.Type != SQLExpressionType.Boolean)
                     {
-                        err = ErrorFormatter.Create(context.OriginalText, unary.Span.Start, $"Logical NOT operator cannot be applied to type {operand.Type}.", unary.Span.Length);
+                        err = ErrorFormatter.Create(_originalText, unary.Span.Start, $"Logical NOT operator cannot be applied to type {operand.Type}.", unary.Span.Length);
                         throw new SyntaxErrorException(err);
                     }
 
                     return operand with { Type = SQLExpressionType.Boolean };
 
                 default:
-                     err = ErrorFormatter.Create(context.OriginalText, unary.Span.Start, $"Unsupported unary operator '{unary.Operator}'.", unary.Span.Length);
+                    err = ErrorFormatter.Create(_originalText, unary.Span.Start, $"Unsupported unary operator '{unary.Operator}'.", unary.Span.Length);
                     throw new SyntaxErrorException(err);
             }
         }
@@ -259,7 +268,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             if (operandMeta.Type == SQLExpressionType.Unknown)
             {
-                var err = ErrorFormatter.Create(context.OriginalText, isn.Span.Start, "Cannot determine expression type for IS NULL.", isn.Span.Length);
+                var err = ErrorFormatter.Create(_originalText, isn.Span.Start, "Cannot determine expression type for IS NULL.", isn.Span.Length);
                 throw new SyntaxErrorException(err);
             }
 
@@ -281,7 +290,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 highMeta.Type == SQLExpressionType.Unknown)
             {
                 var err = ErrorFormatter.Create(
-                    context.OriginalText,
+                    _originalText,
                     b.Span.Start,
                     "Cannot determine expression types for BETWEEN operator.",
                     b.Span.Length);
@@ -307,13 +316,14 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     continue;
                 }
 
-                if (knownType != type)
+                if (!AreTypesCompatible(knownType.Value, type))
                 {
                     var err = ErrorFormatter.Create(
-                        context.OriginalText,
+                        _originalText,
                         b.Span.Start,
-                        $"Type mismatch in BETWEEN expression. Cannot compare target of type " +
-                        $"'{targetMeta.Type}' against bounds of types '{lowMeta.Type}' and '{highMeta.Type}'.",
+                        $"Type mismatch in BETWEEN expression.\n" +
+                        $"Target is '{targetMeta.Type}' but lower type is " +
+                        $"'{lowMeta.Type}' and upper type is '{highMeta.Type}'.",
                         b.Span.Length);
 
                     throw new SyntaxErrorException(err);
@@ -337,7 +347,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             if (targetMeta.Type == SQLExpressionType.Unknown)
             {
-                var err = ErrorFormatter.Create(context.OriginalText, @in.Span.Start, "Cannot determine target expression type for IN operator.", @in.Span.Length);
+                var err = ErrorFormatter.Create(_originalText, @in.Span.Start, "Cannot determine target expression type for IN operator.", @in.Span.Length);
                 throw new SyntaxErrorException(err);
             }
 
@@ -355,7 +365,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 var itemMeta = AnalyzeExpression(itemExpr);
                 if (itemMeta.Type == SQLExpressionType.Unknown)
                 {
-                    var err = ErrorFormatter.Create(context.OriginalText, itemExpr.Span.Start, "Cannot determine value type for IN value.", itemExpr.Span.Length);
+                    var err = ErrorFormatter.Create(_originalText, itemExpr.Span.Start, "Cannot determine value type for IN value.", itemExpr.Span.Length);
                     throw new SyntaxErrorException(err);
                 }
 
@@ -374,11 +384,11 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 }
 
                 // Catch type conflicts between the target or other items
-                if (knownType != itemMeta.Type)
+                if (!AreTypesCompatible(knownType.Value, itemMeta.Type))
                 {
                     var err = ErrorFormatter.Create(
-                        context.OriginalText, 
-                        itemExpr.Span.Start, 
+                        _originalText,
+                        itemExpr.Span.Start,
                         $"Type mismatch in IN list expression. Found conflicting type '{itemMeta.Type}' " +
                         $"against expected type '{knownType}'."
                         , itemExpr.Span.Length);
@@ -400,19 +410,19 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             if (operand.Type == SQLExpressionType.Unknown || pattern.Type == SQLExpressionType.Unknown)
             {
-                var err = ErrorFormatter.Create(context.OriginalText, like.Span.Start, "Cannot determine expression types for LIKE operator.", like.Span.Length);
+                var err = ErrorFormatter.Create(_originalText, like.Span.Start, "Cannot determine expression types for LIKE operator.", like.Span.Length);
                 throw new SyntaxErrorException(err);
             }
 
             if (operand.Type != SQLExpressionType.String && operand.Type != SQLExpressionType.NullLiteral)
             {
-                var err = ErrorFormatter.Create(context.OriginalText, like.Span.Start, $"LIKE operator cannot be applied to type '{operand.Type}'.", like.Span.Length);
+                var err = ErrorFormatter.Create(_originalText, like.Span.Start, $"LIKE operator cannot be applied to type '{operand.Type}'.", like.Span.Length);
                 throw new SyntaxErrorException(err);
             }
 
             if (pattern.Type != SQLExpressionType.String && pattern.Type != SQLExpressionType.NullLiteral)
             {
-                var err = ErrorFormatter.Create(context.OriginalText, like.Span.Start, $"LIKE pattern must be a string, but found '{pattern.Type}'.", like.Span.Length);
+                var err = ErrorFormatter.Create(_originalText, like.Span.Start, $"LIKE pattern must be a string, but found '{pattern.Type}'.", like.Span.Length);
                 throw new SyntaxErrorException(err);
             }
 
@@ -435,7 +445,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 if (baseMeta.Type == SQLExpressionType.Unknown)
                 {
                     var err = ErrorFormatter.Create(
-                        context.OriginalText,
+                        _originalText,
                         caseExpr.BaseExpression.Span.Start,
                         "Cannot determine CASE base expression type.",
                         caseExpr.BaseExpression.Span.Length);
@@ -459,7 +469,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 if (whenMeta.Type == SQLExpressionType.Unknown)
                 {
                     var err = ErrorFormatter.Create(
-                        context.OriginalText,
+                        _originalText,
                         caseWhen.Condition.Span.Start,
                         "Cannot determine WHEN expression type.",
                         caseWhen.Condition.Span.Length);
@@ -470,7 +480,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 if (thenMeta.Type == SQLExpressionType.Unknown)
                 {
                     var err = ErrorFormatter.Create(
-                        context.OriginalText,
+                        _originalText,
                         caseWhen.Result.Span.Start,
                         "Cannot determine return type for THEN.",
                         caseWhen.Result.Span.Length);
@@ -483,10 +493,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 // Simple CASE: CASE base WHEN value
                 if (baseType != null &&
                     whenMeta.Type != SQLExpressionType.NullLiteral &&
-                    whenMeta.Type != baseType)
+                    !AreTypesCompatible(baseType.Value, whenMeta.Type))
                 {
                     var err = ErrorFormatter.Create(
-                        context.OriginalText,
+                        _originalText,
                         caseWhen.Condition.Span.Start,
                         $"Cannot compare CASE base type '{baseType}' with WHEN type '{whenMeta.Type}'.",
                         caseWhen.Condition.Span.Length);
@@ -500,7 +510,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     whenMeta.Type != SQLExpressionType.NullLiteral)
                 {
                     var err = ErrorFormatter.Create(
-                        context.OriginalText,
+                        _originalText,
                         caseWhen.Condition.Span.Start,
                         $"WHEN condition must be Boolean, but found '{whenMeta.Type}'.",
                         caseWhen.Condition.Span.Length);
@@ -521,10 +531,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 {
                     returnType = thenMeta.Type;
                 }
-                else if (returnType != thenMeta.Type)
+                else if (!AreTypesCompatible(returnType.Value, thenMeta.Type))
                 {
                     var err = ErrorFormatter.Create(
-                        context.OriginalText,
+                        _originalText,
                         caseWhen.Result.Span.Start,
                         $"Cannot unify CASE return types '{returnType}' and '{thenMeta.Type}'.",
                         caseWhen.Result.Span.Length);
@@ -541,7 +551,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 if (elseMeta.Type == SQLExpressionType.Unknown)
                 {
                     var err = ErrorFormatter.Create(
-                        context.OriginalText,
+                        _originalText,
                         caseExpr.ElseExpression.Span.Start,
                         "Cannot determine return type for ELSE.",
                         caseExpr.ElseExpression.Span.Length);
@@ -563,10 +573,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     {
                         returnType = elseMeta.Type;
                     }
-                    else if (returnType != elseMeta.Type)
+                    else if (!AreTypesCompatible(returnType.Value, elseMeta.Type))
                     {
                         var err = ErrorFormatter.Create(
-                            context.OriginalText,
+                            _originalText,
                             caseExpr.ElseExpression.Span.Start,
                             $"Cannot unify CASE return types '{returnType}' and '{elseMeta.Type}'.",
                             caseExpr.ElseExpression.Span.Length);
@@ -648,7 +658,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             if (left.Type == SQLExpressionType.Unknown || right.Type == SQLExpressionType.Unknown)
             {
                 err = ErrorFormatter.Create(
-                    context.OriginalText,
+                    _originalText,
                     binary.Span.Start,
                     $"Cannot determine operand types for bitwise operator '{op}'.",
                     binary.Span.Length);
@@ -657,7 +667,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             }
 
             err = ErrorFormatter.Create(
-                    context.OriginalText,
+                    _originalText,
                     binary.Span.Start,
                     $"Bitwise operator '{op}' cannot be applied to types '{left.Type}' and '{right.Type}'.",
                     binary.Span.Length);
@@ -671,9 +681,9 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             static SQLExpressionType GetReturnType(SQLExpressionType left, SQLExpressionType right, string error)
             {
-                switch(left, right)
+                switch (left, right)
                 {
-                    case (SQLExpressionType.Integer,  SQLExpressionType.Integer):
+                    case (SQLExpressionType.Integer, SQLExpressionType.Integer):
                         return SQLExpressionType.Integer;
                     case (SQLExpressionType.Binary, SQLExpressionType.Binary):
                         return SQLExpressionType.Binary;
@@ -706,7 +716,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             if (left.Type == SQLExpressionType.Unknown || right.Type == SQLExpressionType.Unknown)
             {
                 err = ErrorFormatter.Create(
-                    context.OriginalText,
+                    _originalText,
                     binary.Span.Start,
                     $"Cannot determine operand types for logical operator '{op}'.",
                     binary.Span.Length);
@@ -724,7 +734,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 (SQLExpressionType.NullLiteral, SQLExpressionType.NullLiteral) => SQLExpressionType.NullLiteral,
                 _ => throw new SyntaxErrorException(
                     err = ErrorFormatter.Create(
-                    context.OriginalText,
+                    _originalText,
                     binary.Span.Start,
                     $"Logical operator '{op}' cannot be applied to " +
                     $"types '{left.Type}' and '{right.Type}'.",
@@ -752,7 +762,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             if (left.Type == SQLExpressionType.Unknown || right.Type == SQLExpressionType.Unknown)
             {
                 err = ErrorFormatter.Create(
-                    context.OriginalText,
+                    _originalText,
                     binary.Span.Start,
                     $"Cannot determine operand types for comparison operator '{op}'.",
                     binary.Span.Length);
@@ -760,12 +770,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 throw new SyntaxErrorException(err);
             }
 
-            if (left.Type != right.Type &&
-                left.Type != SQLExpressionType.NullLiteral &&
-                right.Type != SQLExpressionType.NullLiteral)
+            if (!AreTypesCompatible(left.Type, right.Type))
             {
                 err = ErrorFormatter.Create(
-                    context.OriginalText,
+                    _originalText,
                     binary.Span.Start,
                     $"Comparison operator '{op}' cannot be applied to types " +
                     $"'{left.Type}' and '{right.Type}'.",
@@ -793,7 +801,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 right.Type == SQLExpressionType.Unknown)
             {
                 err = ErrorFormatter.Create(
-                    context.OriginalText,
+                    _originalText,
                     binary.Span.Start,
                     $"Cannot determine operand types for arithmetic operator '{op}'.",
                     binary.Span.Length);
@@ -812,7 +820,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 if (!SQLDictionary.NumericTypes.Contains(right.Type))
                 {
                     err = ErrorFormatter.Create(
-                        context.OriginalText,
+                        _originalText,
                         binary.Span.Start,
                         $"Arithmetic operator '{op}' cannot be applied to NULL and {right.Type}.",
                         binary.Span.Length);
@@ -828,7 +836,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 if (!SQLDictionary.NumericTypes.Contains(left.Type))
                 {
                     err = ErrorFormatter.Create(
-                        context.OriginalText,
+                        _originalText,
                         binary.Span.Start,
                         $"Arithmetic operator '{op}' cannot be applied to {left.Type} and NULL.",
                         binary.Span.Length);
@@ -845,7 +853,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             else
             {
                 err = ErrorFormatter.Create(
-                    context.OriginalText,
+                    _originalText,
                     binary.Span.Start,
                     $"Arithmetic operator '{op}' cannot be applied to " +
                     $"types '{left.Type}' and '{right.Type}'.",
@@ -987,7 +995,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 };
             }
             var err = ErrorFormatter.Create(
-                context.OriginalText,
+                _originalText,
                 literal.Span.Start,
                 $"Unexpected literal Type '{literal.Value}' ({literal.Type})",
                 literal.Span.Length);
@@ -1001,7 +1009,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 if (wildcard.TableAlias.Count > 1)
                 {
                     var err = ErrorFormatter.Create(
-                        context.OriginalText,
+                        _originalText,
                         wildcard.Span.Start,
                         $"Invalid column reference '{string.Join(".", wildcard.TableAlias)}.*'. " +
                         "Only a single table alias is supported.",
@@ -1024,18 +1032,18 @@ namespace SQLQueryBuilder.Builder.SQLParser
             if (column.Table == null)
             {
                 var err = ErrorFormatter.Create(
-                    context.OriginalText,
+                    _originalText,
                     column.Span.Start,
                     $"Column must be a qualified column name!",
                     column.Span.Length);
 
-                throw new ArgumentNullException(err);
+                throw new SyntaxErrorException(err);
             }
 
             if (column.Table.Count > 1)
             {
                 var err = ErrorFormatter.Create(
-                    context.OriginalText,
+                    _originalText,
                     column.Span.Start,
                     $"Invalid column reference '{string.Join(".", column.Table)}.{column.Column}'. " +
                     "Only a single table alias is supported.",
@@ -1090,16 +1098,55 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 return;
             }
             var err = ErrorFormatter.Create(
-                context.OriginalText,
+                _originalText,
                 select.Span.Start,
                 $"A non-column SELECT expression must have an alias.",
                 select.Span.Length);
             throw new SyntaxErrorException(err);
         }
-
-        #region Testing
-        public SQLExpressionMetadata DebugAnalyzeExpression(SQLExpression expression)
+        private static bool AreTypesCompatible(SQLExpressionType left, SQLExpressionType right)
         {
+            if (left == SQLExpressionType.NullLiteral ||
+                right == SQLExpressionType.NullLiteral)
+                return true;
+
+            if (SQLDictionary.NumericTypes.Contains(left) &&
+                SQLDictionary.NumericTypes.Contains(right))
+                return true;
+
+            return left == right;
+        }
+        private static SQLExpressionType UnifyTypes(SQLExpressionType left, SQLExpressionType right)
+        {
+            if (left == SQLExpressionType.NullLiteral)
+                return right;
+
+            if (right == SQLExpressionType.NullLiteral)
+                return left;
+
+            if (SQLDictionary.NumericTypes.Contains(left) &&
+                SQLDictionary.NumericTypes.Contains(right))
+            {
+                if (left == SQLExpressionType.Double ||
+                    right == SQLExpressionType.Double)
+                    return SQLExpressionType.Double;
+
+                if (left == SQLExpressionType.Decimal ||
+                    right == SQLExpressionType.Decimal)
+                    return SQLExpressionType.Decimal;
+
+                return SQLExpressionType.Integer;
+            }
+
+            if (left == right)
+                return left;
+
+            throw new InvalidOperationException();
+        }
+        #region Testing
+        public SQLExpressionMetadata DebugAnalyzeExpression(SQLExpression expression, string originalText)
+        {
+            _originalText = originalText;
             return AnalyzeExpression(expression);
         }
 

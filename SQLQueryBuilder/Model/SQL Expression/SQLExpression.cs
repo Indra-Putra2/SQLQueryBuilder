@@ -34,6 +34,7 @@ namespace SQLQueryBuilder.Model.SQL_Expression
         public List<SQLExpression> Arguments { get; init; } = new();
         public SQLFunctionType DeclaredType { get; init; } = SQLFunctionType.Unknown;
         public bool IsNullable { get; init; } = false;
+        public bool IsConstant { get; init; } = false;
     }
     public sealed class CaseExpression : SQLExpression
     {

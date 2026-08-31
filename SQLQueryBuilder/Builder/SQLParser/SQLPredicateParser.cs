@@ -1,4 +1,4 @@
-﻿using SQLQueryBuilder.Model;
+﻿using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
 using System.Data;
@@ -9,7 +9,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
     {
         private SQLParserHelper _helper;
         private SQLExpressionParser _expressionParser = new SQLExpressionParser();
-        public SQLExpression Parse(SQLQueryContext context)
+        public SQLExpression Parse(SQLParserContext context)
         {
             _helper = new SQLParserHelper(context);
 

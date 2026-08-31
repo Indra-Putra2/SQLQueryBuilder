@@ -1,6 +1,7 @@
 ﻿using SQLQueryBuilder.Builder;
 using SQLQueryBuilder.Builder.SQLParser;
 using SQLQueryBuilder.Model;
+using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.SQLEnum;
 using System.Data;
 
@@ -8,7 +9,7 @@ internal class SQLFromParser
 {
     private SQLParserHelper _helper;
 
-    public List<string> Parse(SQLQueryContext context)
+    public List<string> Parse(SQLParserContext context)
     {
         _helper = new SQLParserHelper(context);
 

@@ -1,5 +1,4 @@
-﻿using SQLQueryBuilder.SQLEnum;
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Data;
 using System.Reflection;
 
@@ -17,12 +16,12 @@ namespace SQLQueryBuilder.Model
 
             if (string.IsNullOrWhiteSpace(tableAlias))
                 throw new ArgumentNullException($"Table alias for type {type.FullName} cannot be empty or null! ");
-            
+
             if (_tables.ContainsKey(tableAlias))
             {
                 throw new SyntaxErrorException($"Table alias '{tableAlias}' already exists!");
             }
-            
+
             var columns = new Dictionary<string, SQLColumnMetadata>(StringComparer.OrdinalIgnoreCase);
             foreach (var prop in type.GetProperties())
             {
@@ -30,7 +29,7 @@ namespace SQLQueryBuilder.Model
                 var nullable = IsNullable(prop);
                 var expressionType = SQLDictionary.GetExpressionType(prop.PropertyType);
 
-                columns[name] = new SQLColumnMetadata { IsNullable = nullable, ExpressionType = expressionType};
+                columns[name] = new SQLColumnMetadata { IsNullable = nullable, ExpressionType = expressionType };
             }
 
             _tables[tableAlias] = columns;

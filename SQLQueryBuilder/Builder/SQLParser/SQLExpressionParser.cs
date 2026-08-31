@@ -1,4 +1,5 @@
 ﻿using SQLQueryBuilder.Model;
+using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
 using System.Data;
@@ -10,7 +11,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
     internal class SQLExpressionParser
     {
         private SQLParserHelper _helper;
-        public SQLExpression Parse(SQLQueryContext context, bool validateEnd = false)
+        public SQLExpression Parse(SQLParserContext context, bool validateEnd = false)
         {
             _helper = new SQLParserHelper(context);
 
@@ -694,6 +695,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             var args = new List<SQLExpression>();
             var declareType = SQLFunctionType.Unknown;
             var nullable = false;
+            var constant = false;
 
             while (!_helper.IsAtEnd && !_helper.Expect(_helper.Current, SQLTokenType.RightParen))
             {
@@ -733,10 +735,18 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 lastToken = typeToken;
 
                 var nullableToken = _helper.Current;
+                
                 if (_helper.Expect(nullableToken, SQLTokenType.SQLTypeNullable))
                 {
                     _helper.Consume();
                     nullable = true;
+                    lastToken = nullableToken;
+                }
+
+                if (_helper.IsKeyword(_helper.Current, "CONST"))
+                {
+                    _helper.Consume();
+                    constant = true;
                     lastToken = nullableToken;
                 }
             }
@@ -754,6 +764,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 Arguments = args,
                 DeclaredType = declareType,
                 IsNullable = nullable,
+                IsConstant = constant
             };
         }
 

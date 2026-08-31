@@ -1,4 +1,5 @@
 ﻿using SQLQueryBuilder.Model;
+using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.SQLEnum;
 using System.Globalization;
 
@@ -25,7 +26,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
         }
         private char Consume() => _index < _input.Length ? _input[_index++] : '\0';
 
-        public SQLQueryContext Tokenize(string sqlQuery)
+        public SQLParserContext Tokenize(string sqlQuery)
         {
             if (string.IsNullOrWhiteSpace(sqlQuery))
                 throw new ArgumentNullException(nameof(sqlQuery), "Query string cannot be null or empty!");
@@ -199,7 +200,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             _tokens.Add(new SQLToken(SQLTokenType.EOF, _input.Length, 0));
 
-            return new SQLQueryContext(sqlQuery, _tokens);
+            return new SQLParserContext(sqlQuery, _tokens);
         }
 
         #region Helper Parsing Methods

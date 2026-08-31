@@ -1,4 +1,5 @@
 ﻿using SQLQueryBuilder.Model;
+using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.SQLEnum;
 using System.Collections.Frozen;
 
@@ -7,13 +8,13 @@ namespace SQLQueryBuilder.Builder.SQLParser
     internal class SQLParserHelper
     {
         //Variables
-        private readonly SQLQueryContext _context;
+        private readonly SQLParserContext _context;
         public int Index { get; private set; } = 0;
         public string Input => _context.OriginalText;
         public ReadOnlySpan<char> GetSlice(SQLToken token) => _context.GetSlice(token);
 
         //Methods
-        public SQLParserHelper(SQLQueryContext context)
+        public SQLParserHelper(SQLParserContext context)
         {
             if (string.IsNullOrWhiteSpace(context.OriginalText)) throw new ArgumentNullException("Input Cannot be NULL or empty!");
             if (context.Tokens.Count == 0) throw new ArgumentNullException("Tokens cannot be NULL");

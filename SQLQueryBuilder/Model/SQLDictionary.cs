@@ -40,7 +40,7 @@ namespace SQLQueryBuilder.Model
 
         public static readonly FrozenSet<string> SQLCustomKeywords = new[]
         {
-            "TYPE", "?"
+            "TYPE", "?", "CONST"
          }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string>.AlternateLookup<ReadOnlySpan<char>> SQLCustomKeywordsLookup = SQLCustomKeywords.GetAlternateLookup<ReadOnlySpan<char>>();
@@ -238,7 +238,7 @@ namespace SQLQueryBuilder.Model
         }
         public static Type? GetCLRType(SQLExpressionType expressionType)
         {
-            return expressionType switch
+            return expressionType switch 
             {
                 SQLExpressionType.Binary => typeof(byte[]),
                 SQLExpressionType.Boolean => typeof(bool),

@@ -16,23 +16,32 @@ namespace SQLQueryBuilder.Builder
         {
             _query.Append("SELECT");
             _indent++;
-            for (int i = 0; i < sqlQuery.Select.Count; i++)
+
+            if (sqlQuery.Select == null)
+                throw new NullReferenceException("Select cannot be null.");
+            if (sqlQuery.Select.Value.Count == 0)
+                throw new InvalidOperationException("Select cannot be empty.");
+
+            for (int i = 0; i < sqlQuery.Select.Value.Count; i++)
             {
                 if (i > 0)
                     _query.Append(",");
                 NewLine();
                 IndentedLine();
-                WriteExpression(sqlQuery.Select[i]);
+                WriteExpression(sqlQuery.Select.Value[i]);
             }
 
             _indent--;
         }
         private void BuildFrom(SQLQuery sqlQuery)
         {
+            if (sqlQuery.From == null)
+                throw new NullReferenceException("From cannot be null.");
+
             NewLine();
-            _query.Append("FROM ").Append(string.Join(".", sqlQuery.From.TableName));
-            if (sqlQuery.From.Alias != null)
-                _query.Append($" AS {sqlQuery.From.Alias}");
+            _query.Append("FROM ").Append(string.Join(".", sqlQuery.From.Value.TableName));
+            if (sqlQuery.From.Value.Alias != null)
+                _query.Append($" AS {sqlQuery.From.Value.Alias}");
         }
         private void BuildJoins(SQLQuery sqlQuery)
         {
@@ -40,7 +49,7 @@ namespace SQLQueryBuilder.Builder
 
             foreach (var join in sqlQuery.Joins)
             {
-                string joinType = join.JoinType switch
+                string joinType = join.Value.JoinType switch
                 {
                     SQLJoinType.INNER => $"INNER JOIN ",
                     SQLJoinType.LEFT => $"LEFT JOIN ",
@@ -51,13 +60,13 @@ namespace SQLQueryBuilder.Builder
 
                 NewLine();
                 _query.Append(joinType);
-                _query.Append(string.Join(".", join.Table.TableName));
+                _query.Append(string.Join(".", join.Value.Table.TableName));
 
-                if (join.Table.Alias != null)
-                    _query.Append($" AS {join.Table.Alias}");
+                if (join.Value.Table.Alias != null)
+                    _query.Append($" AS {join.Value.Table.Alias}");
 
                 _query.Append(" ON ");
-                WriteExpression(join.Condition, true);
+                WriteExpression(join.Value.Condition, true);
             }
         }
         private void BuildHaving(SQLQuery sqlQuery)
@@ -66,7 +75,7 @@ namespace SQLQueryBuilder.Builder
 
             NewLine();
             _query.Append("HAVING ");
-            WriteExpression(sqlQuery.Having, true);
+            WriteExpression(sqlQuery.Having.Value, true);
         }
         private void BuildWhere(SQLQuery sqlQuery)
         {
@@ -74,7 +83,7 @@ namespace SQLQueryBuilder.Builder
 
             NewLine();
             _query.Append("WHERE ");
-            WriteExpression(sqlQuery.Where, true);
+            WriteExpression(sqlQuery.Where.Value, true);
         }
         private void BuildGroupBy(SQLQuery sqlQuery)
         {
@@ -82,12 +91,12 @@ namespace SQLQueryBuilder.Builder
 
             NewLine();
             _query.Append("GROUP BY ");
-            for (int i = 0; i < sqlQuery.GroupBy.Count; i++)
+            for (int i = 0; i < sqlQuery.GroupBy.Value.Count; i++)
             {
                 if (i > 0)
                     _query.Append(", ");
 
-                WriteExpression(sqlQuery.GroupBy[i]);
+                WriteExpression(sqlQuery.GroupBy.Value[i]);
             }
         }
         private void BuildOrderBy(SQLQuery sqlQuery)
@@ -96,12 +105,12 @@ namespace SQLQueryBuilder.Builder
 
             NewLine();
             _query.Append("ORDER BY ");
-            for (int i = 0; i < sqlQuery.OrderBy.Count; i++)
+            for (int i = 0; i < sqlQuery.OrderBy.Value.Count; i++)
             {
                 if (i > 0)
                     _query.Append(", ");
 
-                WriteExpression(sqlQuery.OrderBy[i]);
+                WriteExpression(sqlQuery.OrderBy.Value[i]);
             }
         }
         public void BuildBaseQuery(SQLQuery sqlQuery)

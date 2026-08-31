@@ -1,6 +1,8 @@
 ﻿using SQLQueryBuilder.Builder.SQLParser;
-using SQLQueryBuilder.Model;
+using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.SQL_Expression;
+using SQLQueryBuilder.SQLEnum;
+using System.Data;
 
 namespace SQLQueryBuilder.Builder
 {
@@ -14,7 +16,7 @@ namespace SQLQueryBuilder.Builder
         private SQLOrderByParser _orderByParser = new SQLOrderByParser();
         private SQLFromParser _fromParser = new SQLFromParser();
 
-        public SQLQueryContext BuildTokens(string input)
+        public SQLParserContext BuildTokens(string input)
         {
             return _tokenizer.Tokenize(input);
         }
@@ -38,7 +40,7 @@ namespace SQLQueryBuilder.Builder
         {
             return _groupByParser.Parse(BuildTokens(input));
         }
-
+        
         public List<OrderByExpression> BuildOrderBy(string input)
         {
             return _orderByParser.Parse(BuildTokens(input));
@@ -47,6 +49,35 @@ namespace SQLQueryBuilder.Builder
         public List<string> BuildFrom(string input)
         {
             return _fromParser.Parse(BuildTokens(input));
+        }
+
+        public string BuildAlias(string alias)
+        {
+            if (string.IsNullOrWhiteSpace(alias))
+                throw new ArgumentNullException("Alias cannot be null!");
+
+            var context = BuildTokens(alias);
+
+            if (context.Tokens.Count != 2)
+            {
+                throw new SyntaxErrorException(
+                    $"'{alias}' is not a valid alias.");
+            }
+
+            var token = context.Tokens[0];
+
+            bool validAlias =
+                token.Type == SQLTokenType.Identifier ||
+                token.Type == SQLTokenType.BracketIdentifier ||
+                token.Type == SQLTokenType.DoubleQuoteIdentifier;
+
+            if (!validAlias || context.Tokens[1].Type != SQLTokenType.EOF)
+            {
+                throw new SyntaxErrorException(
+                    $"'{alias}' is not a valid alias.");
+            }
+
+            return context.GetSlice(context.Tokens[0]).ToString();
         }
     }
 }

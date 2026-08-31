@@ -1,11 +1,11 @@
-﻿namespace SQLQueryBuilder.Model
+﻿namespace SQLQueryBuilder.Model.Context
 {
-    public class SQLQueryContext
+    public class SQLParserContext
     {
         public string OriginalText { get; }
         public IReadOnlyList<SQLToken> Tokens { get; }
 
-        public SQLQueryContext(string originalText, List<SQLToken> tokens)
+        public SQLParserContext(string originalText, List<SQLToken> tokens)
         {
             OriginalText = originalText;
             Tokens = tokens;

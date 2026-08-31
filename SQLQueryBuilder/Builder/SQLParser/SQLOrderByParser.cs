@@ -1,4 +1,5 @@
 ﻿using SQLQueryBuilder.Model;
+using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
 using System.Data;
@@ -9,7 +10,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
     {
         private SQLParserHelper _helper;
         private SQLExpressionParser _expressionParser = new();
-        public List<OrderByExpression> Parse(SQLQueryContext context)
+        public List<OrderByExpression> Parse(SQLParserContext context)
         {
             _helper = new SQLParserHelper(context);
             var orderBy = new List<OrderByExpression>();
