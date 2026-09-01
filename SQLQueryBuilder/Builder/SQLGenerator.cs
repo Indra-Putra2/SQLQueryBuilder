@@ -1,4 +1,4 @@
-﻿using SQLQueryBuilder.Builder.SQLParser;
+﻿using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
@@ -39,9 +39,20 @@ namespace SQLQueryBuilder.Builder
                 throw new NullReferenceException("From cannot be null.");
 
             NewLine();
-            _query.Append("FROM ").Append(string.Join(".", sqlQuery.From.Value.TableName));
+            var names = sqlQuery.From.Value.TableName;
+            _query.Append("FROM ");
+            for (int i = 0; i < names.Count; i++)
+            {
+                AppendColumn(names[i]);
+                if (i != names.Count - 1)
+                    _query.Append(".");
+            }
             if (sqlQuery.From.Value.Alias != null)
-                _query.Append($" AS {sqlQuery.From.Value.Alias}");
+            {
+                _query.Append($" AS ");
+                AppendColumn(sqlQuery.From.Value.Alias);
+            }
+                
         }
         private void BuildJoins(SQLQuery sqlQuery)
         {
@@ -60,10 +71,21 @@ namespace SQLQueryBuilder.Builder
 
                 NewLine();
                 _query.Append(joinType);
-                _query.Append(string.Join(".", join.Value.Table.TableName));
+                
+                var joinTable = join.Value.Table.TableName;
+                for (int i = 0; i < joinTable.Count; i++)
+                {
+                    AppendColumn(joinTable[i]);
+                    if (i != joinTable.Count -1) 
+                        _query.Append(".");
+                }
 
                 if (join.Value.Table.Alias != null)
-                    _query.Append($" AS {join.Value.Table.Alias}");
+                {
+                    _query.Append(" AS ");
+                    AppendColumn(join.Value.Table.Alias);
+                }
+                    
 
                 _query.Append(" ON ");
                 WriteExpression(join.Value.Condition, true);
@@ -247,7 +269,7 @@ namespace SQLQueryBuilder.Builder
                 case SQLLiteralType.Datetime:
                     _query.Append("CAST('")
                           .Append(((DateTime)expression.Value).ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF"))
-                          .Append("' AS DATETIME2)");
+                          .Append("' AS DATETIME)");
                     break;
 
                 case SQLLiteralType.Null:
@@ -257,8 +279,14 @@ namespace SQLQueryBuilder.Builder
         }
         private void WriteColumn(ColumnExpression expression, bool parameterize)
         {
-            var table = expression.Table == null ? "" : string.Join(".", expression.Table);
-            _query.Append(table).Append(".").Append(expression.Column);
+            if(expression.Table != null)
+            {
+                foreach (var iden in expression.Table)
+                    AppendColumn(iden);
+            }
+            _query.Append(".");
+            AppendColumn(expression.Column);
+
         }
         private void WriteBinary(BinaryExpression expression, bool parameterize)
         {
@@ -382,9 +410,12 @@ namespace SQLQueryBuilder.Builder
         {
             if (expression.TableAlias != null)
             {
-                _query.Append($"{expression.TableAlias[0]}.");
+                for (var i = 0; i < expression.TableAlias.Count; i++)
+                {
+                    AppendColumn(expression.TableAlias[i]);
+                    _query.Append(".");
+                }
             }
-
             _query.Append("*");
         }
         private void WriteIsNull(IsNullExpression expression, bool parameterize)
@@ -446,7 +477,7 @@ namespace SQLQueryBuilder.Builder
         {
             WriteExpression(expression.Expression, parameterize);
             if (expression.Alias != null)
-                _query.Append($" AS {expression.Alias}");
+                _query.Append($" AS {SQLParserHelper.EscapeIdentifierQuote(expression.Alias)}");
         }
         private void WriteOrderByExpression(OrderByExpression expression, bool parameterize)
         {
@@ -497,6 +528,21 @@ namespace SQLQueryBuilder.Builder
                 _ => throw new InvalidOperationException(
                     $"Cannot negate value of type {value.GetType().Name}.")
             };
+        }
+        private void AppendColumn(SQLIdentifier identifier)
+        {
+            switch (identifier.Delimiter)
+            {
+                case SQLIdentifierDelimiter.Bracket:
+                    _query.Append(SQLParserHelper.EscapeIdentifierBracket(identifier.Value));
+                    break;
+                case SQLIdentifierDelimiter.DoubleQuote:
+                    _query.Append(SQLParserHelper.EscapeIdentifierQuote(identifier.Value));
+                    break;
+                default:
+                    _query.Append(SQLParserHelper.EscapeIdentifierQuote(identifier.Value));
+                    break;
+            }
         }
         #endregion
         // Currently Unsupported

@@ -1,4 +1,5 @@
-﻿using SQLQueryBuilder.Model;
+﻿using SQLQueryBuilder.Helper;
+using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.SQLEnum;
 using System.Globalization;

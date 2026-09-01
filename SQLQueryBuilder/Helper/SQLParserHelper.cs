@@ -3,7 +3,7 @@ using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.SQLEnum;
 using System.Collections.Frozen;
 
-namespace SQLQueryBuilder.Builder.SQLParser
+namespace SQLQueryBuilder.Helper
 {
     internal class SQLParserHelper
     {
@@ -102,14 +102,24 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             return $"'{value.ToString().Replace("'", "''")}'";
         }
-        public static string EscapeIdentifier(string value)
+        public static string EscapeIdentifierQuote(string value)
         {
-            if (value.IndexOf('"') < 0)
-            {
-                return $"\"{value.ToString()}\"";
-            }
+            return $"\"{value.Replace("\"", "\"\"")}\"";
+        }
+        public static string EscapeIdentifierBracket(string value)
+        {
+            return $"[{value.Replace("]", "]]")}]";
+        }
 
-            return $"\"{value.ToString().Replace("\"", "\"\"")}\"";
+        public static SQLIdentifierDelimiter GetIdentifierDelimiter(SQLToken token)
+        {
+            if (token.Type == SQLTokenType.BracketIdentifier)
+                return SQLIdentifierDelimiter.Bracket;
+
+            if (token.Type == SQLTokenType.DoubleQuoteIdentifier)
+                return SQLIdentifierDelimiter.DoubleQuote;
+
+            return SQLIdentifierDelimiter.None;
         }
     }
 }

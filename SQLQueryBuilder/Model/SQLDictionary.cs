@@ -137,7 +137,6 @@ namespace SQLQueryBuilder.Model
                 SQLTokenType.Identifier,
                 SQLTokenType.BracketIdentifier,
                 SQLTokenType.DoubleQuoteIdentifier,
-                SQLTokenType.StringLiteral
             }.ToFrozenSet();
 
         public static readonly FrozenSet<SQLExpressionType> NumericTypes =

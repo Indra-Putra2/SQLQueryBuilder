@@ -1,4 +1,5 @@
 ﻿using SQLQueryBuilder.Builder.SQLParser;
+using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Interface;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.SQL_Expression;
@@ -40,7 +41,7 @@ namespace SQLQueryBuilder.Builder
                 Alias = _builderHelper.BuildAlias(tableAlias)
             };
 
-            _query.From = new Source<TableSource>
+            _query.From = new SQLSource<TableSource>
             {
                 OriginalText = rawName,
                 Value = table
@@ -51,7 +52,7 @@ namespace SQLQueryBuilder.Builder
 
         public IQuery Select(string colums)
         {
-            _query.Select = new Source<List<SelectExpression>>
+            _query.Select = new SQLSource<List<SelectExpression>>
             {
                 OriginalText = colums,
                 Value = _builderHelper.BuildSelect(colums)
@@ -76,12 +77,12 @@ namespace SQLQueryBuilder.Builder
                 JoinType = joinType
             };
 
-            _query.Joins.Add(new Source<JoinSource> { OriginalText = joinCondition, Value = join });
+            _query.Joins.Add(new SQLSource<JoinSource> { OriginalText = joinCondition, Value = join });
             return this;
         }
         public IQueryFilter GroupBy(string groupBy)
         {
-            _query.GroupBy = new Source<List<SQLExpression>>
+            _query.GroupBy = new SQLSource<List<SQLExpression>>
             {
                 OriginalText = groupBy,
                 Value = _builderHelper.BuildGroupBy(groupBy)
@@ -91,7 +92,7 @@ namespace SQLQueryBuilder.Builder
 
         public IQueryFilter OrderBy(string orderBy)
         {
-            _query.OrderBy = new Source<List<OrderByExpression>>
+            _query.OrderBy = new SQLSource<List<OrderByExpression>>
             {
                 OriginalText = orderBy,
                 Value = _builderHelper.BuildOrderBy(orderBy)
@@ -101,7 +102,7 @@ namespace SQLQueryBuilder.Builder
 
         public IQueryFilter Where(string where)
         {
-            _query.Where = new Source<SQLExpression>
+            _query.Where = new SQLSource<SQLExpression>
             {
                 OriginalText = where,
                 Value = _builderHelper.BuildExpression(where)
@@ -111,7 +112,7 @@ namespace SQLQueryBuilder.Builder
 
         public IQueryFilter Having(string having)
         {
-            _query.Having = new Source<SQLExpression>
+            _query.Having = new SQLSource<SQLExpression>
             {
                 OriginalText = having,
                 Value = _builderHelper.BuildExpression(having)

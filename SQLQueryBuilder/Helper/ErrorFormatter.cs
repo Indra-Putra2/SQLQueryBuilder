@@ -1,6 +1,6 @@
 ﻿using System.Text;
 
-namespace SQLQueryBuilder.Builder
+namespace SQLQueryBuilder.Helper
 {
     internal static class ErrorFormatter
     {

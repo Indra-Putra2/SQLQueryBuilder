@@ -1,8 +1,4 @@
-﻿using HardwareInventoryLibrary.Ram;
-using SQLQueryBuilder.Builder;
-using SQLQueryBuilder.Builder.SQLParser;
-
-namespace SQLQueryBuilder.Test
+﻿namespace SQLQueryBuilder.Test
 {
     internal class TestClass
     {

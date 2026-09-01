@@ -6,14 +6,14 @@ namespace SQLQueryBuilder.Model
     {
         public Type? OutputDTO { get; set; } = null;
 
-        public Source<TableSource>? From { get; set; } = null;
-        public Source<List<SelectExpression>>? Select { get; set; } = null;
-        public List<Source<JoinSource>> Joins { get; set; } = new();
+        public SQLSource<TableSource>? From { get; set; } = null;
+        public SQLSource<List<SelectExpression>>? Select { get; set; } = null;
+        public List<SQLSource<JoinSource>> Joins { get; set; } = new();
 
-        public Source<SQLExpression>? Having { get; set; } = null;
-        public Source<SQLExpression>? Where { get; set; } = null;
+        public SQLSource<SQLExpression>? Having { get; set; } = null;
+        public SQLSource<SQLExpression>? Where { get; set; } = null;
 
-        public Source<List<SQLExpression>>? GroupBy { get; set; } = null;
-        public Source<List<OrderByExpression>>? OrderBy { get; set; } = null;
+        public SQLSource<List<SQLExpression>>? GroupBy { get; set; } = null;
+        public SQLSource<List<OrderByExpression>>? OrderBy { get; set; } = null;
     }
 }

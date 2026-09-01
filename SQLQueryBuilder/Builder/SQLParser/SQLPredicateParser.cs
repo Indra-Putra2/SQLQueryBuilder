@@ -1,4 +1,5 @@
-﻿using SQLQueryBuilder.Model.Context;
+﻿using SQLQueryBuilder.Helper;
+using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
 using System.Data;

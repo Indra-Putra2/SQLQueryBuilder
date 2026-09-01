@@ -1,5 +1,4 @@
-﻿using SQLQueryBuilder.SQLEnum;
-using System.Data;
+﻿using System.Data;
 using System.Reflection;
 
 namespace SQLQueryBuilder.Model.SQL_Expression
@@ -12,7 +11,7 @@ namespace SQLQueryBuilder.Model.SQL_Expression
 
         public void RegisterDTO(Type type)
         {
-            foreach(var property in type.GetProperties())
+            foreach (var property in type.GetProperties())
             {
                 _properties[property.Name] = property;
             }

@@ -1,10 +1,13 @@
-﻿using SQLQueryBuilder.Builder.SQLParser;
+﻿using SQLQueryBuilder.Builder;
+using SQLQueryBuilder.Builder.SQLParser;
+using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
 using System.Data;
+using System.Xml.Linq;
 
-namespace SQLQueryBuilder.Builder
+namespace SQLQueryBuilder.Helper
 {
     public class SQLBuilderHelper
     {
@@ -15,13 +18,14 @@ namespace SQLQueryBuilder.Builder
         private SQLGroupByParser _groupByParser = new SQLGroupByParser();
         private SQLOrderByParser _orderByParser = new SQLOrderByParser();
         private SQLFromParser _fromParser = new SQLFromParser();
+        private SQLGenerator _generator = new SQLGenerator();
 
         public SQLParserContext BuildTokens(string input)
         {
             return _tokenizer.Tokenize(input);
         }
 
-        public SQLExpression BuildExpression(string input, bool validateEnd = false)
+        public SQLExpression BuildExpression(string input, bool validateEnd = true)
         {
             return _expressionParser.Parse(BuildTokens(input), validateEnd);
         }
@@ -46,12 +50,19 @@ namespace SQLQueryBuilder.Builder
             return _orderByParser.Parse(BuildTokens(input));
         }
 
-        public List<string> BuildFrom(string input)
+        public List<SQLIdentifier> BuildFrom(string input)
         {
             return _fromParser.Parse(BuildTokens(input));
         }
 
-        public string BuildAlias(string alias)
+        public SQLQueryResult BuildSQL(SQLQuery query)
+        {
+            _generator.BuildBaseQuery(query);
+            _generator.BuildClauses(query);
+            return _generator.Build();
+        }
+
+        public SQLIdentifier BuildAlias(string alias)
         {
             if (string.IsNullOrWhiteSpace(alias))
                 throw new ArgumentNullException("Alias cannot be null!");
@@ -66,6 +77,9 @@ namespace SQLQueryBuilder.Builder
 
             var token = context.Tokens[0];
 
+            SQLIdentifierDelimiter delimiter = SQLParserHelper.GetIdentifierDelimiter(token);
+            var name = SQLParserHelper.UnescapeIdentifier(context.GetSlice(context.Tokens[0]));
+
             bool validAlias =
                 token.Type == SQLTokenType.Identifier ||
                 token.Type == SQLTokenType.BracketIdentifier ||
@@ -76,8 +90,12 @@ namespace SQLQueryBuilder.Builder
                 throw new SyntaxErrorException(
                     $"'{alias}' is not a valid alias.");
             }
-
-            return context.GetSlice(context.Tokens[0]).ToString();
+            var aliasIden = new SQLIdentifier
+            {
+                Value = name,
+                Delimiter = delimiter
+            };
+            return aliasIden;
         }
     }
 }

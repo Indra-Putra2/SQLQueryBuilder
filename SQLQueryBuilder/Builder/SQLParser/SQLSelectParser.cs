@@ -1,4 +1,5 @@
-﻿using SQLQueryBuilder.Model;
+﻿using SQLQueryBuilder.Helper;
+using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
@@ -34,7 +35,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             { 
                 Span = CreateSpan(expr.Span.Start, lastStart, lastLength),
                 Expression = expr, 
-                Alias = alias is SQLToken token ? _helper.GetSlice(token).ToString() : null
+                Alias = GetAliasName(alias)
             });
 
             while (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Comma))
@@ -50,7 +51,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 {
                     Span = CreateSpan(expr.Span.Start, lastStart, lastLength),
                     Expression = expr,
-                    Alias = alias is SQLToken sqlToken ? _helper.GetSlice(sqlToken).ToString() : null
+                    Alias = GetAliasName(alias)
                 };
 
                 selected.Add(select);
@@ -91,6 +92,12 @@ namespace SQLQueryBuilder.Builder.SQLParser
             }
 
             return _helper.Consume(); // Consume Alias
+        }
+
+        private string? GetAliasName(SQLToken? token)
+        {
+            if (token == null) return null;
+            return SQLParserHelper.UnescapeIdentifier(_helper.GetSlice(token.Value));
         }
 
         private SQLSourceSpan CreateSpan(int startPosition, int endStartPosition, int endLength)

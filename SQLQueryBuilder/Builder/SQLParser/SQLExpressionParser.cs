@@ -1,4 +1,5 @@
-﻿using SQLQueryBuilder.Model;
+﻿using SQLQueryBuilder.Helper;
+using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
@@ -639,15 +640,31 @@ namespace SQLQueryBuilder.Builder.SQLParser
         {
             var token = _helper.Consume();
             var name = _helper.GetSlice(token);
+            
+            // Delimiter check '[' / '"'
+            var delimiter = SQLParserHelper.GetIdentifierDelimiter(token);
 
+            // Function check '('
             if (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.LeftParen))
             {
                 return ParseFunction(name, token);
             }
+
+            // Check for qualified column db.column etc
             else if (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Dot))
             {
-                var parts = new List<string> { SQLParserHelper.UnescapeIdentifier(name) };
+                // get the first column
+                var stringName = SQLParserHelper.UnescapeIdentifier(name);
+                var parts = new List<SQLIdentifier> 
+                { 
+                    new SQLIdentifier
+                    {
+                        Value = stringName,
+                        Delimiter = delimiter
+                    }
+                };
 
+                // check for more qualified column
                 while (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Dot))
                 {
                     _helper.Consume(); // consume '.'
@@ -656,34 +673,52 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     if (_helper.Expect(_helper.Current, SQLTokenType.Asterisk))
                     {
                         _helper.Consume(); // consume '*'
-                        return new WildcardExpression { Span = CreateSpan(token), TableAlias = parts };
+                        return new WildcardExpression
+                        {
+                            Span = CreateSpan(token),
+                            TableAlias = parts
+                        };
                     }
 
                     if (!_helper.Expects(_helper.Current, SQLDictionary.Identifiers) && !_helper.Expect(_helper.Current, SQLTokenType.Keyword))
                         throw new SyntaxErrorException("Expected identifier after '.'");
 
                     var columnToken = _helper.Consume();
-                    name = _helper.GetSlice(columnToken);
 
-                    parts.Add(SQLParserHelper.UnescapeIdentifier(name));
+                    // Delimiter check
+                    delimiter = SQLParserHelper.GetIdentifierDelimiter(columnToken);
+                    name = _helper.GetSlice(columnToken);
+                    parts.Add(
+                        new SQLIdentifier 
+                        { 
+                            Value = SQLParserHelper.UnescapeIdentifier(name), 
+                            Delimiter = delimiter 
+                        });
                 }
 
-                var column = parts[^1]; // Last item
-                parts.RemoveAt(parts.Count - 1);
+                // Get the last item from qualified column example server.dbo.ram -> get ram
+                var qualifiedColumn = parts[^1]; // Last item
+                parts.RemoveAt(parts.Count - 1); // remove last item
 
                 return new ColumnExpression
                 {
                     Span = CreateSpan(token),
                     Table = parts.Count > 0 ? parts : null,
-                    Column = column
+                    Column = qualifiedColumn
                 };
             }
+
+            var column = new SQLIdentifier
+            {
+                Value = SQLParserHelper.UnescapeIdentifier(name),
+                Delimiter = delimiter
+            };
 
             // 3. Simple Unqualified Identifier: age, name, status
             return new ColumnExpression()
             {
                 Span = CreateSpan(token),
-                Column = SQLParserHelper.UnescapeIdentifier(name)
+                Column = column
             };
 
         }
@@ -926,6 +961,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 || _helper.IsKeyword(_helper.Peek(), "LIKE")
                 || _helper.IsKeyword(_helper.Peek(), "BETWEEN");
         }
+
         private SQLSourceSpan CreateSpan(SQLToken token)
         {
             return new SQLSourceSpan { Start = token.StartPosition, Length = token.Length };

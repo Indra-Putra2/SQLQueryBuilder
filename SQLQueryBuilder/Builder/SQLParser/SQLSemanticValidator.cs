@@ -1,4 +1,5 @@
-﻿using SQLQueryBuilder.Model;
+﻿using SQLQueryBuilder.Helper;
+using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
 using System.Data;
@@ -48,7 +49,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             if (from.TableName.Count == 0)
                 throw new InvalidOperationException("FROM table name cannot be empty.");
 
-            _tableManager.RegisterTable(from.Alias, from.Type);
+            _tableManager.RegisterTable(from.Alias.Value, from.Type);
         }
 
         private void ValidateJoins(SQLQuery query)
@@ -68,7 +69,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 if (table.TableName.Count == 0)
                     throw new InvalidOperationException($"Join table name cannot be empty for {table.Type.Name}.");
 
-                _tableManager.RegisterTable(join.Table.Alias, join.Table.Type);
+                _tableManager.RegisterTable(join.Table.Alias.Value, join.Table.Type);
                 _originalText = source.OriginalText;
                 AnalyzeExpression(join.Condition);
             }
@@ -1052,7 +1053,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 throw new SyntaxErrorException(err);
             }
 
-            var metadata = _tableManager.GetColumnMetadata(column.Table[0], column.Column);
+            var metadata = _tableManager.GetColumnMetadata(column.Table[0].Value, column.Column.Value);
 
             return new SQLExpressionMetadata
             {
@@ -1072,7 +1073,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             if (select.Expression is ColumnExpression column)
             {
-                _dtoManager.RegisterOutput(column.Column);
+                _dtoManager.RegisterOutput(column.Column.Value);
                 return;
             }
 
@@ -1080,7 +1081,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             {
                 if (wildcard.TableAlias != null)
                 {
-                    var columns = _tableManager.GetTableColumns(wildcard.TableAlias[0]);
+                    var columns = _tableManager.GetTableColumns(wildcard.TableAlias[0].Value);
 
                     foreach (var c in columns)
                         _dtoManager.RegisterOutput(c.Key);

@@ -1,4 +1,5 @@
-﻿using SQLQueryBuilder.Model.SQL_Expression;
+﻿using SQLQueryBuilder.Model;
+using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
 
 public abstract class SQLTableSource
@@ -7,9 +8,9 @@ public abstract class SQLTableSource
 
 public sealed class TableSource : SQLTableSource
 {
-    public Type Type { get; init; }
-    public List<string> TableName { get; init; } = new();
-    public string Alias { get; init; }
+    public required Type Type { get; init; }
+    public required List<SQLIdentifier> TableName { get; init; } = new();
+    public required SQLIdentifier Alias { get; init; }
 }
 
 public sealed class JoinSource : SQLTableSource

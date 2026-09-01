@@ -1,5 +1,4 @@
-﻿using SQLQueryBuilder.Builder;
-using SQLQueryBuilder.Builder.SQLParser;
+﻿using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.SQLEnum;
@@ -9,11 +8,11 @@ internal class SQLFromParser
 {
     private SQLParserHelper _helper;
 
-    public List<string> Parse(SQLParserContext context)
+    public List<SQLIdentifier> Parse(SQLParserContext context)
     {
         _helper = new SQLParserHelper(context);
 
-        var parts = new List<string>();
+        var parts = new List<SQLIdentifier>();
 
         // First identifier
         if (!_helper.Expects(_helper.Current, SQLDictionary.Identifiers))
@@ -27,7 +26,9 @@ internal class SQLFromParser
         }
         var token = _helper.Consume();
         var name = _helper.GetSlice(token);
-        parts.Add(SQLParserHelper.UnescapeIdentifier(name));
+        var stringName = SQLParserHelper.UnescapeIdentifier(name);
+        var delimiter = SQLParserHelper.GetIdentifierDelimiter(token);
+        parts.Add(new SQLIdentifier { Value = stringName, Delimiter = delimiter});
 
 
         // dbo.Table style
@@ -47,7 +48,9 @@ internal class SQLFromParser
 
             token = _helper.Consume();
             name = _helper.GetSlice(token);
-            parts.Add(SQLParserHelper.UnescapeIdentifier(name));
+            stringName = SQLParserHelper.UnescapeIdentifier(name);
+            delimiter = SQLParserHelper.GetIdentifierDelimiter(token);
+            parts.Add(new SQLIdentifier { Value = stringName, Delimiter = delimiter });
 
             if (parts.Count > 4)
             {
