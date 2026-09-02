@@ -86,7 +86,7 @@ namespace SQLQueryBuilder.Model.SQL_Expression
     public sealed class SelectExpression : SQLExpression
     {
         public required SQLExpression Expression { get; init; }
-        public string? Alias { get; init; }
+        public SQLIdentifier? Alias { get; init; }
     }
     public sealed class OrderByExpression : SQLExpression
     {

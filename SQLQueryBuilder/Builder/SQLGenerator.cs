@@ -8,13 +8,18 @@ namespace SQLQueryBuilder.Builder
 {
     internal class SQLGenerator
     {
-        private readonly StringBuilder _query = new();
+        private readonly StringBuilder _temporaryQuery = new();
+        private readonly StringBuilder _baseQuery = new();
+
+        private int _parameterIndex = 1;
+        private int _temporaryParameterIndex = 1;
+
         private int _indent = 0;
         private SQLQueryResult _result = new();
         #region SQL Builder
         private void BuildSelect(SQLQuery sqlQuery)
         {
-            _query.Append("SELECT");
+            _temporaryQuery.Append("SELECT");
             _indent++;
 
             if (sqlQuery.Select == null)
@@ -25,7 +30,8 @@ namespace SQLQueryBuilder.Builder
             for (int i = 0; i < sqlQuery.Select.Value.Count; i++)
             {
                 if (i > 0)
-                    _query.Append(",");
+                    _temporaryQuery.Append(",");
+
                 NewLine();
                 IndentedLine();
                 WriteExpression(sqlQuery.Select.Value[i]);
@@ -40,16 +46,16 @@ namespace SQLQueryBuilder.Builder
 
             NewLine();
             var names = sqlQuery.From.Value.TableName;
-            _query.Append("FROM ");
+            _temporaryQuery.Append("FROM ");
             for (int i = 0; i < names.Count; i++)
             {
                 AppendColumn(names[i]);
                 if (i != names.Count - 1)
-                    _query.Append(".");
+                    _temporaryQuery.Append(".");
             }
             if (sqlQuery.From.Value.Alias != null)
             {
-                _query.Append($" AS ");
+                _temporaryQuery.Append($" AS ");
                 AppendColumn(sqlQuery.From.Value.Alias);
             }
                 
@@ -70,24 +76,24 @@ namespace SQLQueryBuilder.Builder
                 };
 
                 NewLine();
-                _query.Append(joinType);
+                _temporaryQuery.Append(joinType);
                 
                 var joinTable = join.Value.Table.TableName;
                 for (int i = 0; i < joinTable.Count; i++)
                 {
                     AppendColumn(joinTable[i]);
                     if (i != joinTable.Count -1) 
-                        _query.Append(".");
+                        _temporaryQuery.Append(".");
                 }
 
                 if (join.Value.Table.Alias != null)
                 {
-                    _query.Append(" AS ");
+                    _temporaryQuery.Append(" AS ");
                     AppendColumn(join.Value.Table.Alias);
                 }
                     
 
-                _query.Append(" ON ");
+                _temporaryQuery.Append(" ON ");
                 WriteExpression(join.Value.Condition, true);
             }
         }
@@ -96,7 +102,7 @@ namespace SQLQueryBuilder.Builder
             if (sqlQuery.Having == null) return;
 
             NewLine();
-            _query.Append("HAVING ");
+            _temporaryQuery.Append("HAVING ");
             WriteExpression(sqlQuery.Having.Value, true);
         }
         private void BuildWhere(SQLQuery sqlQuery)
@@ -104,7 +110,7 @@ namespace SQLQueryBuilder.Builder
             if (sqlQuery.Where == null) return;
 
             NewLine();
-            _query.Append("WHERE ");
+            _temporaryQuery.Append("WHERE ");
             WriteExpression(sqlQuery.Where.Value, true);
         }
         private void BuildGroupBy(SQLQuery sqlQuery)
@@ -112,11 +118,11 @@ namespace SQLQueryBuilder.Builder
             if (sqlQuery.GroupBy == null) return;
 
             NewLine();
-            _query.Append("GROUP BY ");
+            _temporaryQuery.Append("GROUP BY ");
             for (int i = 0; i < sqlQuery.GroupBy.Value.Count; i++)
             {
                 if (i > 0)
-                    _query.Append(", ");
+                    _temporaryQuery.Append(", ");
 
                 WriteExpression(sqlQuery.GroupBy.Value[i]);
             }
@@ -126,37 +132,45 @@ namespace SQLQueryBuilder.Builder
             if (sqlQuery.OrderBy == null) return;
 
             NewLine();
-            _query.Append("ORDER BY ");
+            _temporaryQuery.Append("ORDER BY ");
             for (int i = 0; i < sqlQuery.OrderBy.Value.Count; i++)
             {
                 if (i > 0)
-                    _query.Append(", ");
+                    _temporaryQuery.Append(", ");
 
                 WriteExpression(sqlQuery.OrderBy.Value[i]);
             }
         }
+
         public void BuildBaseQuery(SQLQuery sqlQuery)
         {
             BuildSelect(sqlQuery);
             BuildFrom(sqlQuery);
             BuildJoins(sqlQuery);
+
+            _baseQuery.Append(_temporaryQuery);
+            _parameterIndex = _temporaryParameterIndex;
+            
+            _temporaryQuery.Clear();
         }
-        public string BuildClauses(SQLQuery sqlQuery)
+        public void BuildClauses(SQLQuery sqlQuery)
         {
+            _temporaryQuery.Clear();
+            _temporaryParameterIndex = _parameterIndex;
+
             BuildWhere(sqlQuery);
             BuildGroupBy(sqlQuery);
             BuildHaving(sqlQuery);
             BuildOrderBy(sqlQuery);
-
-            return _query.ToString();
         }
-
         public SQLQueryResult Build()
         {
-            _result.SetSQL(_query.ToString());
+            _result.SetSQL(_baseQuery.ToString() + _temporaryQuery.ToString());
+            _result.SetParameterIndex(_temporaryParameterIndex);
             return _result;
         }
         #endregion
+
         #region SQL Expression Writer
         private void WriteExpression(SQLExpression expression, bool parameterize = false)
         {
@@ -231,49 +245,49 @@ namespace SQLQueryBuilder.Builder
             switch (expression.Type)
             {
                 case SQLLiteralType.Money:
-                    _query.Append('$').Append(expression.Value);
+                    _temporaryQuery.Append('$').Append(expression.Value);
                     break;
 
                 case SQLLiteralType.BinaryLiteral:
-                    _query.Append("0x").Append(expression.Value);
+                    _temporaryQuery.Append("0x").Append(expression.Value);
                     break;
 
                 case SQLLiteralType.UnicodeString:
-                    _query.Append("N")
+                    _temporaryQuery.Append("N")
                           .Append(SQLParserHelper.EscapeStringLiteral((string)expression.Value));
                     break;
 
                 case SQLLiteralType.String:
-                    _query.Append(
+                    _temporaryQuery.Append(
                         SQLParserHelper.EscapeStringLiteral((string)expression.Value));
                     break;
 
                 case SQLLiteralType.Scientific:
                 case SQLLiteralType.Decimal:
                 case SQLLiteralType.Integer:
-                    _query.Append(expression.Value);
+                    _temporaryQuery.Append(expression.Value);
                     break;
 
                 case SQLLiteralType.Date:
-                    _query.Append("CAST('")
+                    _temporaryQuery.Append("CAST('")
                           .Append(((DateOnly)expression.Value).ToString("yyyy-MM-dd"))
                           .Append("' AS DATE)");
                     break;
 
                 case SQLLiteralType.Time:
-                    _query.Append("CAST('")
+                    _temporaryQuery.Append("CAST('")
                           .Append(((TimeOnly)expression.Value).ToString("HH:mm:ss.FFFFFFF"))
                           .Append("' AS TIME)");
                     break;
 
                 case SQLLiteralType.Datetime:
-                    _query.Append("CAST('")
+                    _temporaryQuery.Append("CAST('")
                           .Append(((DateTime)expression.Value).ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF"))
                           .Append("' AS DATETIME)");
                     break;
 
                 case SQLLiteralType.Null:
-                    _query.Append("NULL");
+                    _temporaryQuery.Append("NULL");
                     break;
             }
         }
@@ -284,7 +298,7 @@ namespace SQLQueryBuilder.Builder
                 foreach (var iden in expression.Table)
                     AppendColumn(iden);
             }
-            _query.Append(".");
+            _temporaryQuery.Append(".");
             AppendColumn(expression.Column);
 
         }
@@ -322,7 +336,7 @@ namespace SQLQueryBuilder.Builder
                 _ => throw new NotSupportedException($"Binary with the operator {expression.Operator} is not Supported")
             };
 
-            _query.Append(' ').Append(op).Append(' ');
+            _temporaryQuery.Append(' ').Append(op).Append(' ');
 
             WriteExpression(expression.Right, parameterize);
         }
@@ -354,32 +368,32 @@ namespace SQLQueryBuilder.Builder
             };
 
             string space = expression.Operator == SQLUnaryOperator.NOT ? " " : "";
-            _query.Append(op).Append(space);
+            _temporaryQuery.Append(op).Append(space);
 
             WriteExpression(expression.Operand, parameterize);
         }
         private void WriteFunction(FunctionExpression expression, bool parameterize)
         {
-            _query.Append(expression.Name).Append("(");
+            _temporaryQuery.Append(expression.Name).Append("(");
 
             for (int i = 0; i < expression.Arguments.Count; i++)
             {
                 if (i > 0)
-                    _query.Append(", ");
+                    _temporaryQuery.Append(", ");
 
                 WriteExpression(expression.Arguments[i], parameterize);
             }
 
-            _query.Append(")");
+            _temporaryQuery.Append(")");
         }
         private void WriteCase(CaseExpression expression, bool parameterize)
         {
-            _query.Append("CASE ");
+            _temporaryQuery.Append("CASE ");
 
             if (expression.BaseExpression != null)
             {
                 WriteExpression(expression.BaseExpression, parameterize);
-                _query.Append(' ');
+                _temporaryQuery.Append(' ');
             }
 
             _indent++;
@@ -387,10 +401,10 @@ namespace SQLQueryBuilder.Builder
             {
                 NewLine();
                 IndentedLine();
-                _query.Append("WHEN ");
+                _temporaryQuery.Append("WHEN ");
                 WriteExpression(c.Condition, parameterize);
 
-                _query.Append(" THEN ");
+                _temporaryQuery.Append(" THEN ");
                 WriteExpression(c.Result, parameterize);
             }
 
@@ -398,13 +412,13 @@ namespace SQLQueryBuilder.Builder
             {
                 NewLine();
                 IndentedLine();
-                _query.Append("ELSE ");
+                _temporaryQuery.Append("ELSE ");
                 WriteExpression(expression.ElseExpression, parameterize);
             }
             _indent--;
             NewLine();
             IndentedLine();
-            _query.Append("END");
+            _temporaryQuery.Append("END");
         }
         private void WriteWildcard(WildcardExpression expression, bool parameterize)
         {
@@ -413,28 +427,28 @@ namespace SQLQueryBuilder.Builder
                 for (var i = 0; i < expression.TableAlias.Count; i++)
                 {
                     AppendColumn(expression.TableAlias[i]);
-                    _query.Append(".");
+                    _temporaryQuery.Append(".");
                 }
             }
-            _query.Append("*");
+            _temporaryQuery.Append("*");
         }
         private void WriteIsNull(IsNullExpression expression, bool parameterize)
         {
             WriteExpression(expression.Operand, parameterize);
-            _query.Append(" IS");
+            _temporaryQuery.Append(" IS");
 
             if (expression.IsNot)
-                _query.Append(" NOT");
+                _temporaryQuery.Append(" NOT");
 
-            _query.Append(" NULL");
+            _temporaryQuery.Append(" NULL");
         }
         private void WriteLike(LikeExpression expression, bool parameterize)
         {
             WriteExpression(expression.Operand, parameterize);
 
             if (expression.IsNot)
-                _query.Append(" NOT");
-            _query.Append(" LIKE ");
+                _temporaryQuery.Append(" NOT");
+            _temporaryQuery.Append(" LIKE ");
 
             WriteExpression(expression.Pattern, parameterize);
         }
@@ -442,75 +456,80 @@ namespace SQLQueryBuilder.Builder
         {
             WriteExpression(expression.Operand, parameterize);
             if (expression.IsNot)
-                _query.Append(" NOT");
-            _query.Append(" IN (");
+                _temporaryQuery.Append(" NOT");
+            _temporaryQuery.Append(" IN (");
 
             if (expression.Values.Count > 1)
             {
                 for (int i = 0; i < expression.Values.Count; i++)
                 {
                     if (i > 0)
-                        _query.Append(", ");
+                        _temporaryQuery.Append(", ");
 
                     WriteExpression(expression.Values[i], parameterize);
                 }
 
-                _query.Append(")");
+                _temporaryQuery.Append(")");
             }
             else
             {
                 WriteExpression(expression.Values[0], parameterize);
-                _query.Append(")");
+                _temporaryQuery.Append(")");
             }
         }
         private void WriteBetween(BetweenExpression expression, bool parameterize)
         {
             WriteExpression(expression.Operand, parameterize);
             if (expression.IsNot)
-                _query.Append(" NOT");
-            _query.Append(" BETWEEN ");
+                _temporaryQuery.Append(" NOT");
+            _temporaryQuery.Append(" BETWEEN ");
             WriteExpression(expression.Lower, parameterize);
-            _query.Append(" AND ");
+            _temporaryQuery.Append(" AND ");
             WriteExpression(expression.Upper, parameterize);
         }
         private void WriteSelectExpression(SelectExpression expression, bool parameterize)
         {
             WriteExpression(expression.Expression, parameterize);
             if (expression.Alias != null)
-                _query.Append($" AS {SQLParserHelper.EscapeIdentifierQuote(expression.Alias)}");
+            {
+                _temporaryQuery.Append($" AS ");
+                AppendColumn(expression.Alias);
+            }
+                
+
         }
         private void WriteOrderByExpression(OrderByExpression expression, bool parameterize)
         {
             WriteExpression(expression.Expression, parameterize);
             if (expression.Descending)
-                _query.Append(" DESC");
+                _temporaryQuery.Append(" DESC");
             else
-                _query.Append(" ASC");
+                _temporaryQuery.Append(" ASC");
         }
         private void WriteParenthesized(ParenthesizedExpression expression, bool parameterize)
         {
-            _query.Append("(");
+            _temporaryQuery.Append("(");
             WriteExpression(expression.Expression, parameterize);
-            _query.Append(")");
+            _temporaryQuery.Append(")");
         }
         #endregion
         #region Helper
         private void NewLine()
         {
-            _query.AppendLine();
+            _temporaryQuery.AppendLine();
         }
         private void IndentedLine()
         {
-            _query.Append('\t', _indent);
+            _temporaryQuery.Append('\t', _indent);
         }
         private bool TryWriteParameter(object value, bool parameterize)
         {
             if (!parameterize)
                 return false;
 
-            string paramName = $"@p{_result.NextParameterIndex()}";
+            string paramName = $"@p{_temporaryParameterIndex++}";
 
-            _query.Append(paramName);
+            _temporaryQuery.Append(paramName);
             _result.AddParameter(paramName, value);
 
             return true;
@@ -534,13 +553,13 @@ namespace SQLQueryBuilder.Builder
             switch (identifier.Delimiter)
             {
                 case SQLIdentifierDelimiter.Bracket:
-                    _query.Append(SQLParserHelper.EscapeIdentifierBracket(identifier.Value));
+                    _temporaryQuery.Append(SQLParserHelper.EscapeIdentifierBracket(identifier.Value));
                     break;
                 case SQLIdentifierDelimiter.DoubleQuote:
-                    _query.Append(SQLParserHelper.EscapeIdentifierQuote(identifier.Value));
+                    _temporaryQuery.Append(SQLParserHelper.EscapeIdentifierQuote(identifier.Value));
                     break;
                 default:
-                    _query.Append(SQLParserHelper.EscapeIdentifierQuote(identifier.Value));
+                    _temporaryQuery.Append(SQLParserHelper.EscapeIdentifierQuote(identifier.Value));
                     break;
             }
         }

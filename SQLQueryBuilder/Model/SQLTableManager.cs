@@ -1,5 +1,8 @@
-﻿using System.Collections.ObjectModel;
+﻿using SQLQueryBuilder.Helper;
+using SQLQueryBuilder.Model.SQL_Expression;
+using System.Collections.ObjectModel;
 using System.Data;
+using System.Data.Common;
 using System.Reflection;
 
 namespace SQLQueryBuilder.Model
@@ -34,22 +37,67 @@ namespace SQLQueryBuilder.Model
 
             _tables[tableAlias] = columns;
         }
-        public SQLColumnMetadata GetColumnMetadata(string tableAlias, string columnName)
+        public SQLColumnMetadata GetColumnMetadata(string originalText, ColumnExpression column)
         {
-            if (!_tables.TryGetValue(tableAlias, out var columns))
-                throw new SyntaxErrorException(
-                    $"Unknown table alias '{tableAlias}'.");
+            if(column.Table == null)
+            {
+                var err = ErrorFormatter.Create(
+                    originalText,
+                    column.Span.Start,
+                    $"Table Name cannot be empty.",
+                    column.Span.Length);
 
-            if (!columns.TryGetValue(columnName, out var metadata))
-                throw new SyntaxErrorException(
-                    $"Column '{columnName}' does not exist on table '{tableAlias}'.");
+                throw new SyntaxErrorException(err);
+            }
+
+            if (!_tables.TryGetValue(column.Table[0].Value, out var columns))
+            {
+                var err = ErrorFormatter.Create(
+                    originalText, 
+                    column.Span.Start, 
+                    $"Unknown table alias '{column.Table[0].Value}'.", 
+                    column.Span.Length);
+
+                throw new SyntaxErrorException(err);
+            }
+                
+
+            if (!columns.TryGetValue(column.Column.Value, out var metadata))
+            {
+                var err = ErrorFormatter.Create(
+                    originalText,
+                    column.Span.Start,
+                    $"Column '{column.Column.Value}' does not exist on table '{column.Table[0].Value}'.",
+                    column.Span.Length);
+
+                throw new SyntaxErrorException(err);
+            }
 
             return metadata;
         }
-        public ReadOnlyDictionary<string, SQLColumnMetadata> GetTableColumns(string tableAlias)
+        public ReadOnlyDictionary<string, SQLColumnMetadata> GetTableColumns(string originalText, WildcardExpression wildcard)
         {
-            if (!_tables.TryGetValue(tableAlias, out var columns))
-                throw new SyntaxErrorException($"Unknown table alias '{tableAlias}'.");
+            if (wildcard.TableAlias == null)
+            {
+                var err = ErrorFormatter.Create(
+                    originalText,
+                    wildcard.Span.Start,
+                    $"Table Name cannot be empty.",
+                    wildcard.Span.Length);
+
+                throw new SyntaxErrorException(err);
+            }
+
+            if (!_tables.TryGetValue(wildcard.TableAlias[0].Value, out var columns))
+            {
+                var err = ErrorFormatter.Create(
+                    originalText,
+                    wildcard.Span.Start,
+                    $"Unknown table alias '{wildcard.TableAlias[0].Value}'.",
+                    wildcard.Span.Length);
+
+                throw new SyntaxErrorException(err);
+            }
 
             return new ReadOnlyDictionary<string, SQLColumnMetadata>(columns);
         }

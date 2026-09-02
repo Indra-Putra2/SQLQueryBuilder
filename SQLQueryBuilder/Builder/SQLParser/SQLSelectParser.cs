@@ -94,10 +94,14 @@ namespace SQLQueryBuilder.Builder.SQLParser
             return _helper.Consume(); // Consume Alias
         }
 
-        private string? GetAliasName(SQLToken? token)
+        private SQLIdentifier? GetAliasName(SQLToken? token)
         {
             if (token == null) return null;
-            return SQLParserHelper.UnescapeIdentifier(_helper.GetSlice(token.Value));
+            return new SQLIdentifier
+            {
+                Value = SQLParserHelper.UnescapeIdentifier(_helper.GetSlice(token.Value)),
+                Delimiter = SQLParserHelper.GetIdentifierDelimiter(token.Value)
+            };
         }
 
         private SQLSourceSpan CreateSpan(int startPosition, int endStartPosition, int endLength)

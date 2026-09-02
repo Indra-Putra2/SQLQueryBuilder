@@ -1053,7 +1053,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 throw new SyntaxErrorException(err);
             }
 
-            var metadata = _tableManager.GetColumnMetadata(column.Table[0].Value, column.Column.Value);
+            var metadata = _tableManager.GetColumnMetadata(_originalText, column);
 
             return new SQLExpressionMetadata
             {
@@ -1067,7 +1067,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
         {
             if (select.Alias != null)
             {
-                _dtoManager.RegisterOutput(select.Alias, metadata);
+                _dtoManager.RegisterOutput(select.Alias.Value, metadata);
                 return;
             }
 
@@ -1081,7 +1081,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             {
                 if (wildcard.TableAlias != null)
                 {
-                    var columns = _tableManager.GetTableColumns(wildcard.TableAlias[0].Value);
+                    var columns = _tableManager.GetTableColumns(_originalText ,wildcard);
 
                     foreach (var c in columns)
                         _dtoManager.RegisterOutput(c.Key);
