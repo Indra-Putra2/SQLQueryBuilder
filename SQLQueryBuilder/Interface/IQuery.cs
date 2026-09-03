@@ -20,6 +20,7 @@ namespace SQLQueryBuilder.Interface
         IQueryFilter Having(string having);
         IQueryFilter Where(string where);
         IQueryFilter ValidateBaseQuery();
+        IQueryFilter Limit(int limit);
         SQLQueryResult Build();
     }
 
@@ -29,6 +30,7 @@ namespace SQLQueryBuilder.Interface
         IQueryFilter GroupBy(string groupBy);
         IQueryFilter Having(string having);
         IQueryFilter Where(string where);
+        IQueryFilter Limit(int limit);
         SQLQueryResult Build();
     }
 }

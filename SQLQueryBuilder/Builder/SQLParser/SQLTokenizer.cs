@@ -615,7 +615,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
         private void ThrowTemporalError(int start, string message, string format)
         {
             var num = _input.Substring(start, _index - start);
-            var err = ErrorFormatter.Create(_input, _index, $"{message} {num}. Expected format: {format}.");
+            var err = ErrorFormatter.Create(_input, start, $"{message} {num}. Expected format: {format}.", num.Length + 1);
             throw new FormatException(err);
         }
         private void ExpectHyphen(int start, string format)

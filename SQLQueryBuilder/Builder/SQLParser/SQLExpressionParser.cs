@@ -638,16 +638,17 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
         private SQLExpression ParseIdentifierOrFunction()
         {
-            var token = _helper.Consume();
-            var name = _helper.GetSlice(token);
-            
+            var start = _helper.Consume();
+            var name = _helper.GetSlice(start);
+            SQLToken lastToken = start;
+
             // Delimiter check '[' / '"'
-            var delimiter = SQLParserHelper.GetIdentifierDelimiter(token);
+            var delimiter = SQLParserHelper.GetIdentifierDelimiter(start);
 
             // Function check '('
             if (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.LeftParen))
             {
-                return ParseFunction(name, token);
+                return ParseFunction(name, start);
             }
 
             // Check for qualified column db.column etc
@@ -664,6 +665,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     }
                 };
 
+                
                 // check for more qualified column
                 while (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Dot))
                 {
@@ -672,10 +674,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     // Check for wildcard like 'table.*'
                     if (_helper.Expect(_helper.Current, SQLTokenType.Asterisk))
                     {
-                        _helper.Consume(); // consume '*'
+                        lastToken = _helper.Consume(); // consume '*'
                         return new WildcardExpression
                         {
-                            Span = CreateSpan(token),
+                            Span = CreateSpan(start.StartPosition, lastToken.StartPosition, lastToken.Length),
                             TableAlias = parts
                         };
                     }
@@ -683,11 +685,11 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     if (!_helper.Expects(_helper.Current, SQLDictionary.Identifiers) && !_helper.Expect(_helper.Current, SQLTokenType.Keyword))
                         throw new SyntaxErrorException("Expected identifier after '.'");
 
-                    var columnToken = _helper.Consume();
+                    lastToken = _helper.Consume();
 
                     // Delimiter check
-                    delimiter = SQLParserHelper.GetIdentifierDelimiter(columnToken);
-                    name = _helper.GetSlice(columnToken);
+                    delimiter = SQLParserHelper.GetIdentifierDelimiter(lastToken);
+                    name = _helper.GetSlice(lastToken);
                     parts.Add(
                         new SQLIdentifier 
                         { 
@@ -702,7 +704,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
                 return new ColumnExpression
                 {
-                    Span = CreateSpan(token),
+                    Span = CreateSpan(start.StartPosition, lastToken.StartPosition, lastToken.Length),
                     Table = parts.Count > 0 ? parts : null,
                     Column = qualifiedColumn
                 };
@@ -717,7 +719,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             // 3. Simple Unqualified Identifier: age, name, status
             return new ColumnExpression()
             {
-                Span = CreateSpan(token),
+                Span = CreateSpan(start),
                 Column = column
             };
 

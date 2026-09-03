@@ -120,6 +120,12 @@ namespace SQLQueryBuilder.Builder
             return this;
         }
 
+        public IQueryFilter Limit(int limit)
+        {
+            _query.Limit = limit;
+            return this;
+        }
+
         public IQueryFilter ValidateBaseQuery()
         {
             _validator.ValidateBaseQuery(_query);

@@ -1,4 +1,5 @@
-﻿using SQLQueryBuilder.Helper;
+﻿using Dapper;
+using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
@@ -10,12 +11,15 @@ namespace SQLQueryBuilder.Builder
     {
         private readonly StringBuilder _temporaryQuery = new();
         private readonly StringBuilder _baseQuery = new();
+        private DynamicParameters _temporaryParameters = new();
+        private DynamicParameters _baseParameters = new();
 
-        private int _parameterIndex = 1;
-        private int _temporaryParameterIndex = 1;
-
-        private int _indent = 0;
         private SQLQueryResult _result = new();
+
+        private int _baseParameterIndex = 1;
+        private int _temporaryParameterIndex = 1;
+        private int _indent = 0;
+
         #region SQL Builder
         private void BuildSelect(SQLQuery sqlQuery)
         {
@@ -141,6 +145,13 @@ namespace SQLQueryBuilder.Builder
                 WriteExpression(sqlQuery.OrderBy.Value[i]);
             }
         }
+        private void BuildLimit(SQLQuery sqlQuery)
+        {
+            if(sqlQuery.Limit == null) return;
+
+            NewLine();
+            _temporaryQuery.Append($"LIMIT {sqlQuery.Limit}");
+        }
 
         public void BuildBaseQuery(SQLQuery sqlQuery)
         {
@@ -149,24 +160,27 @@ namespace SQLQueryBuilder.Builder
             BuildJoins(sqlQuery);
 
             _baseQuery.Append(_temporaryQuery);
-            _parameterIndex = _temporaryParameterIndex;
-            
-            _temporaryQuery.Clear();
+            _baseParameterIndex = _temporaryParameterIndex;
+            _baseParameters = _temporaryParameters;
         }
         public void BuildClauses(SQLQuery sqlQuery)
         {
             _temporaryQuery.Clear();
-            _temporaryParameterIndex = _parameterIndex;
+            _temporaryParameters = new DynamicParameters(_baseParameters);
+            _temporaryParameterIndex = _baseParameterIndex;
 
             BuildWhere(sqlQuery);
             BuildGroupBy(sqlQuery);
             BuildHaving(sqlQuery);
             BuildOrderBy(sqlQuery);
+            BuildLimit(sqlQuery);
         }
+
         public SQLQueryResult Build()
         {
             _result.SetSQL(_baseQuery.ToString() + _temporaryQuery.ToString());
             _result.SetParameterIndex(_temporaryParameterIndex);
+            _result.SetParameter(_temporaryParameters);
             return _result;
         }
         #endregion
@@ -530,7 +544,7 @@ namespace SQLQueryBuilder.Builder
             string paramName = $"@p{_temporaryParameterIndex++}";
 
             _temporaryQuery.Append(paramName);
-            _result.AddParameter(paramName, value);
+            _temporaryParameters.Add(paramName, value);
 
             return true;
         }

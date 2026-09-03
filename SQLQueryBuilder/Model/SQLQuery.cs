@@ -15,5 +15,6 @@ namespace SQLQueryBuilder.Model
 
         public SQLSource<List<SQLExpression>>? GroupBy { get; set; } = null;
         public SQLSource<List<OrderByExpression>>? OrderBy { get; set; } = null;
+        public int? Limit { get; set; }
     }
 }
