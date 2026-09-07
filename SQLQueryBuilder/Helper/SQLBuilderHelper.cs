@@ -71,8 +71,13 @@ namespace SQLQueryBuilder.Helper
 
             if (context.Tokens.Count != 2)
             {
+                string cause = context.Tokens.Any(t => t.Type == SQLTokenType.Dot)
+                    ? "Aliases cannot contain table or schema prefixes (e.g., 'dbo.name')."
+                    : $"Expected a single identifier, but found multiple tokens.";
+
                 throw new SyntaxErrorException(
-                    $"'{alias}' is not a valid alias.");
+                    $"'{alias}' is not a valid alias. {cause}\n" +
+                    $"Aliases must be a single name, such as name, [name], or \"name\".");
             }
 
             var token = context.Tokens[0];
@@ -88,7 +93,9 @@ namespace SQLQueryBuilder.Helper
             if (!validAlias || context.Tokens[1].Type != SQLTokenType.EOF)
             {
                 throw new SyntaxErrorException(
-                    $"'{alias}' is not a valid alias.");
+                    $"'{alias}' is not a valid alias." +
+                    $"\nAlias must be of type Identifier, Bracket identifier or Double quote identifier " +
+                    $"\ne.g., name, [name], \"name\"");
             }
             var aliasIden = new SQLIdentifier
             {

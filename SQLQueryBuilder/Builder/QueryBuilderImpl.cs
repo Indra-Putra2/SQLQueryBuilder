@@ -80,43 +80,61 @@ namespace SQLQueryBuilder.Builder
             _query.Joins.Add(new SQLSource<JoinSource> { OriginalText = joinCondition, Value = join });
             return this;
         }
-        public IQueryFilter GroupBy(string groupBy)
-        {
-            _query.GroupBy = new SQLSource<List<SQLExpression>>
-            {
-                OriginalText = groupBy,
-                Value = _builderHelper.BuildGroupBy(groupBy)
-            };
-            return this;
-        }
-
-        public IQueryFilter OrderBy(string orderBy)
-        {
-            _query.OrderBy = new SQLSource<List<OrderByExpression>>
-            {
-                OriginalText = orderBy,
-                Value = _builderHelper.BuildOrderBy(orderBy)
-            };
-            return this;
-        }
 
         public IQueryFilter Where(string where)
         {
-            _query.Where = new SQLSource<SQLExpression>
-            {
-                OriginalText = where,
-                Value = _builderHelper.BuildExpression(where)
-            };
+            _query.Where = null;
+
+            if (!string.IsNullOrWhiteSpace(where))
+                _query.Where = new SQLSource<SQLExpression>
+                {
+                    OriginalText = where,
+                    Value = _builderHelper.BuildPredicate(where)
+                };
+
+            return this;
+        }
+
+        public IQueryFilter GroupBy(string groupBy)
+        {
+            _query.GroupBy = null;
+
+            if (!string.IsNullOrWhiteSpace(groupBy))
+                _query.GroupBy = new SQLSource<List<SQLExpression>>
+                {
+                    OriginalText = groupBy,
+                    Value = _builderHelper.BuildGroupBy(groupBy)
+                };
+
             return this;
         }
 
         public IQueryFilter Having(string having)
         {
-            _query.Having = new SQLSource<SQLExpression>
-            {
-                OriginalText = having,
-                Value = _builderHelper.BuildExpression(having)
-            };
+            _query.Having = null;
+
+            if (!string.IsNullOrWhiteSpace(having))
+                _query.Having = new SQLSource<SQLExpression>
+                {
+                    OriginalText = having,
+                    Value = _builderHelper.BuildPredicate(having)
+                };
+
+            return this;
+        }
+
+        public IQueryFilter OrderBy(string orderBy)
+        {
+            _query.OrderBy = null;
+
+            if (!string.IsNullOrWhiteSpace(orderBy))
+
+                _query.OrderBy = new SQLSource<List<OrderByExpression>>
+                {
+                    OriginalText = orderBy,
+                    Value = _builderHelper.BuildOrderBy(orderBy)
+                };
+
             return this;
         }
 

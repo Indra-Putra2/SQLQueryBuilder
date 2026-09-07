@@ -21,7 +21,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 var err = ErrorFormatter.Create(
                 _helper.Input,
                 0,
-                "JOIN condition must evaluate to a boolean.",
+                "Expression must be a predicate.",
                 errorTextLength: _helper.Input.Length);
 
                 throw new SyntaxErrorException(err);

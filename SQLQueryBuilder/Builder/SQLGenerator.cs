@@ -147,7 +147,7 @@ namespace SQLQueryBuilder.Builder
         }
         private void BuildLimit(SQLQuery sqlQuery)
         {
-            if(sqlQuery.Limit == null) return;
+            if(sqlQuery.Limit == null || sqlQuery.Limit == 0) return;
 
             NewLine();
             _temporaryQuery.Append($"LIMIT {sqlQuery.Limit}");

@@ -88,17 +88,14 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
         private void ValidateWhere(SQLQuery query)
         {
-            if (query.Where != null)
-            {
-                _originalText = query.Where.OriginalText;
-                AnalyzeExpression(query.Where.Value);
-            }
+            if (query.Where == null) return;
+            _originalText = query.Where.OriginalText;
+            AnalyzeExpression(query.Where.Value);
         }
 
         private void ValidateHaving(SQLQuery query)
         {
-            if (query.Having == null)
-                return;
+            if (query.Having == null) return;
 
             if (query.GroupBy == null || query.GroupBy.Value.Count == 0)
             {
@@ -111,26 +108,24 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
         private void ValidateGroupBy(SQLQuery query)
         {
-            if (query.GroupBy != null)
+            if (query.GroupBy == null) return;
+
+            _originalText = query.GroupBy.OriginalText;
+            foreach (var group in query.GroupBy.Value)
             {
-                _originalText = query.GroupBy.OriginalText;
-                foreach (var group in query.GroupBy.Value)
-                {
-                    AnalyzeExpression(group);
-                }
+                AnalyzeExpression(group);
             }
         }
 
         private void ValidateOrderBy(SQLQuery query)
         {
             var orderby = query.OrderBy;
-            if (orderby != null)
+            if (orderby == null) return;
+
+            _originalText = orderby.OriginalText;
+            foreach (var order in orderby.Value)
             {
-                _originalText = orderby.OriginalText;
-                foreach (var order in orderby.Value)
-                {
-                    AnalyzeExpression(order);
-                }
+                AnalyzeExpression(order);
             }
         }
 
