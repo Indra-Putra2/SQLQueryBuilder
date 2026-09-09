@@ -27,6 +27,17 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 throw new SyntaxErrorException(err);
             }
 
+            if (!_helper.Expect(_helper.Current, SQLTokenType.EOF))
+            {
+                var err = ErrorFormatter.Create(
+                    _helper.Input,
+                    _helper.Current.StartPosition,
+                    "Unexpected token after expression.",
+                    errorTextLength: _helper.Input.Length - _helper.Current.StartPosition);
+
+                throw new SyntaxErrorException(err);
+            }
+
             return expr;
         }
 

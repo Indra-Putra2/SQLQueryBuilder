@@ -10,7 +10,7 @@ namespace SQLQueryBuilder.Builder
     internal class SQLGenerator
     {
         private readonly StringBuilder _temporaryQuery = new();
-        private readonly StringBuilder _baseQuery = new();
+        private string _baseQuery = string.Empty;
         private DynamicParameters _temporaryParameters = new();
         private DynamicParameters _baseParameters = new();
 
@@ -159,7 +159,7 @@ namespace SQLQueryBuilder.Builder
             BuildFrom(sqlQuery);
             BuildJoins(sqlQuery);
 
-            _baseQuery.Append(_temporaryQuery);
+            _baseQuery = _temporaryQuery.ToString();
             _baseParameterIndex = _temporaryParameterIndex;
             _baseParameters = _temporaryParameters;
         }
@@ -178,7 +178,7 @@ namespace SQLQueryBuilder.Builder
 
         public SQLQueryResult Build()
         {
-            _result.SetSQL(_baseQuery.ToString() + _temporaryQuery.ToString());
+            _result.SetSQL($"{_baseQuery} {_temporaryQuery.ToString()}");
             _result.SetParameterIndex(_temporaryParameterIndex);
             _result.SetParameter(_temporaryParameters);
             return _result;
