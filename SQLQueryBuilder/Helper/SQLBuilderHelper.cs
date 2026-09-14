@@ -1,11 +1,11 @@
 ﻿using SQLQueryBuilder.Builder;
 using SQLQueryBuilder.Builder.SQLParser;
+using SQLQueryBuilder.Interface;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
 using System.Data;
-using System.Xml.Linq;
 
 namespace SQLQueryBuilder.Helper
 {
@@ -44,7 +44,7 @@ namespace SQLQueryBuilder.Helper
         {
             return _groupByParser.Parse(BuildTokens(input));
         }
-        
+
         public List<OrderByExpression> BuildOrderBy(string input)
         {
             return _orderByParser.Parse(BuildTokens(input));
@@ -104,5 +104,7 @@ namespace SQLQueryBuilder.Helper
             };
             return aliasIden;
         }
+
+        public IASTTraverser ASTWalkerBuiler(IASTVisitor walker) => new ASTWalker(walker);
     }
 }

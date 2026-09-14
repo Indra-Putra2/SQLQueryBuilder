@@ -81,7 +81,7 @@ namespace SQLQueryBuilder.Builder
             return this;
         }
 
-        public IQueryFilter Where(string where)
+        public IQueryFilter Where(string? where)
         {
             _query.Where = null;
 
@@ -95,7 +95,7 @@ namespace SQLQueryBuilder.Builder
             return this;
         }
 
-        public IQueryFilter GroupBy(string groupBy)
+        public IQueryFilter GroupBy(string? groupBy)
         {
             _query.GroupBy = null;
 
@@ -109,7 +109,7 @@ namespace SQLQueryBuilder.Builder
             return this;
         }
 
-        public IQueryFilter Having(string having)
+        public IQueryFilter Having(string? having)
         {
             _query.Having = null;
 
@@ -123,7 +123,7 @@ namespace SQLQueryBuilder.Builder
             return this;
         }
 
-        public IQueryFilter OrderBy(string orderBy)
+        public IQueryFilter OrderBy(string? orderBy)
         {
             _query.OrderBy = null;
 
@@ -138,9 +138,11 @@ namespace SQLQueryBuilder.Builder
             return this;
         }
 
-        public IQueryFilter Limit(int limit)
+        public IQueryFilter Limit(int? limit)
         {
-            _query.Limit = limit;
+            _query.Limit = null;
+            if(limit != null && limit >= 0)
+                _query.Limit = limit;
             return this;
         }
 

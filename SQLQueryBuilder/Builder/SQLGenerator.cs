@@ -34,9 +34,11 @@ namespace SQLQueryBuilder.Builder
             for (int i = 0; i < sqlQuery.Select.Value.Count; i++)
             {
                 if (i > 0)
+                {
                     _temporaryQuery.Append(",");
+                    NewLine();
+                }
 
-                NewLine();
                 IndentedLine();
                 WriteExpression(sqlQuery.Select.Value[i]);
             }
@@ -147,7 +149,7 @@ namespace SQLQueryBuilder.Builder
         }
         private void BuildLimit(SQLQuery sqlQuery)
         {
-            if(sqlQuery.Limit == null || sqlQuery.Limit == 0) return;
+            if(sqlQuery.Limit == null || sqlQuery.Limit < 0) return;
 
             NewLine();
             _temporaryQuery.Append($"LIMIT {sqlQuery.Limit}");
@@ -178,7 +180,7 @@ namespace SQLQueryBuilder.Builder
 
         public SQLQueryResult Build()
         {
-            _result.SetSQL($"{_baseQuery} {_temporaryQuery.ToString()}");
+            _result.SetSQL($"{_baseQuery}{_temporaryQuery.ToString()}");
             _result.SetParameterIndex(_temporaryParameterIndex);
             _result.SetParameter(_temporaryParameters);
             return _result;
