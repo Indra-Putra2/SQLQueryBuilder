@@ -752,13 +752,44 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             SQLToken lastToken = _helper.Consume(); // consume ')'
 
-            if (_helper.IsKeyword(_helper.Current, "TYPE"))
+            bool typeIsNull = _helper.Expect(_helper.Current, SQLTokenType.NullLiteral);
+            if (_helper.IsKeyword(_helper.Current, "TYPE") || _helper.IsKeyword(_helper.Current, "CONST") || _helper.Expect(_helper.Current,SQLTokenType.SQLType) || typeIsNull)
             {
-                _helper.Consume(); // Consume TYPE
-                
-                var typeToken = _helper.Current;
+                // TYPE?
+                if (_helper.IsKeyword(_helper.Current, "TYPE"))
+                {
+                    _helper.Consume();
+                }
 
-                if (!SQLDictionary.TryGetSQLType(_helper.GetSlice(typeToken), out declareType))
+                // CONST?
+                if (_helper.IsKeyword(_helper.Current, "CONST"))
+                {
+                    _helper.Consume();
+                    constant = true;
+                }
+
+                // SQLType
+                var typeToken = _helper.Current;
+                typeIsNull = typeIsNull || _helper.Expect(_helper.Current, SQLTokenType.NullLiteral);
+                if (!_helper.Expect(typeToken, SQLTokenType.SQLType) && !typeIsNull)
+                {
+                    var err = ErrorFormatter.Create(
+                        _helper.Input,
+                        typeToken.StartPosition,
+                        $"Expected SQL type, got '{_helper.GetSlice(typeToken)}'",
+                        errorTextLength: typeToken.Length);
+
+                    throw new SyntaxErrorException(err);
+                }
+
+                if (typeIsNull)
+                {
+                    nullable = true;
+                }
+
+                if (!SQLDictionary.TryGetSQLType(
+                        _helper.GetSlice(typeToken),
+                        out declareType))
                 {
                     var err = ErrorFormatter.Create(
                         _helper.Input,
@@ -768,22 +799,27 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
                     throw new SyntaxErrorException(err);
                 }
+
                 _helper.Consume();
                 lastToken = typeToken;
 
+                // NULLABLE?
                 var nullableToken = _helper.Current;
-                
+
                 if (_helper.Expect(nullableToken, SQLTokenType.SQLTypeNullable))
                 {
+                    if (typeIsNull)
+                    {
+                        var err = ErrorFormatter.Create(
+                            _helper.Input,
+                            nullableToken.StartPosition,
+                            "NULL type cannot be nullable.",
+                            errorTextLength: nullableToken.Length);
+
+                        throw new SyntaxErrorException(err);
+                    }
                     _helper.Consume();
                     nullable = true;
-                    lastToken = nullableToken;
-                }
-
-                if (_helper.IsKeyword(_helper.Current, "CONST"))
-                {
-                    _helper.Consume();
-                    constant = true;
                     lastToken = nullableToken;
                 }
             }

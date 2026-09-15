@@ -21,6 +21,15 @@ namespace SQLQueryBuilder.Helper
                 case LiteralExpression literal: 
                     _walker.OnLiteral(literal); 
                     break;
+                case ColumnExpression column:
+                    _walker.OnColumn(column);
+                    break;
+                case UnaryExpression unary:
+                    _walker.OnUnary(unary);
+                    break;
+                case FunctionExpression function:
+                    _walker.OnFucntion(function);
+                    break;
                 default:
                     throw new NotSupportedException(
                         $"Unsupported AST node: {expr.GetType().Name}");
