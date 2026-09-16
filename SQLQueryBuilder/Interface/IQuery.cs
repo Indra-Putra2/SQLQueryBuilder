@@ -5,12 +5,12 @@ namespace SQLQueryBuilder.Interface
 {
     public interface IQueryFrom
     {
-        IQuerySelect From<T>(string? tableAlias);
+        IQuerySelect From<T>(string tableAlias);
     }
 
     public interface IQuerySelect
     {
-        IQuery Select(string? colums);
+        IQuery Select(string colums);
     }
     public interface IQuery
     {

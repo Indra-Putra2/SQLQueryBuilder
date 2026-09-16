@@ -5,7 +5,6 @@ using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
 using System.Data;
 using System.Globalization;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace SQLQueryBuilder.Builder.SQLParser
 {
@@ -656,8 +655,8 @@ namespace SQLQueryBuilder.Builder.SQLParser
             {
                 // get the first column
                 var stringName = SQLParserHelper.UnescapeIdentifier(name);
-                var parts = new List<SQLIdentifier> 
-                { 
+                var parts = new List<SQLIdentifier>
+                {
                     new SQLIdentifier
                     {
                         Value = stringName,
@@ -665,7 +664,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     }
                 };
 
-                
+
                 // check for more qualified column
                 while (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Dot))
                 {
@@ -691,10 +690,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     delimiter = SQLParserHelper.GetIdentifierDelimiter(lastToken);
                     name = _helper.GetSlice(lastToken);
                     parts.Add(
-                        new SQLIdentifier 
-                        { 
-                            Value = SQLParserHelper.UnescapeIdentifier(name), 
-                            Delimiter = delimiter 
+                        new SQLIdentifier
+                        {
+                            Value = SQLParserHelper.UnescapeIdentifier(name),
+                            Delimiter = delimiter
                         });
                 }
 
@@ -753,7 +752,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             SQLToken lastToken = _helper.Consume(); // consume ')'
 
             bool typeIsNull = _helper.Expect(_helper.Current, SQLTokenType.NullLiteral);
-            if (_helper.IsKeyword(_helper.Current, "TYPE") || _helper.IsKeyword(_helper.Current, "CONST") || _helper.Expect(_helper.Current,SQLTokenType.SQLType) || typeIsNull)
+            if (_helper.IsKeyword(_helper.Current, "TYPE") || _helper.IsKeyword(_helper.Current, "CONST") || _helper.Expect(_helper.Current, SQLTokenType.SQLType) || typeIsNull)
             {
                 // TYPE?
                 if (_helper.IsKeyword(_helper.Current, "TYPE"))
@@ -914,12 +913,12 @@ namespace SQLQueryBuilder.Builder.SQLParser
         {
             var val = _helper.GetSlice(token);
             string err;
-            
-            if(token.Type == SQLTokenType.DateLiteral)
+
+            if (token.Type == SQLTokenType.DateLiteral)
             {
                 val = val[2..^1]; // remove d'...'
 
-                if(!DateOnly.TryParseExact(val, SQLDictionary.DateFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+                if (!DateOnly.TryParseExact(val, SQLDictionary.DateFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
                 {
                     err = ErrorFormatter.Create(
                         _helper.Input,
@@ -929,7 +928,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
                     throw new SyntaxErrorException(err);
                 }
-                
+
                 return new LiteralExpression
                 {
                     Span = CreateSpan(token),
