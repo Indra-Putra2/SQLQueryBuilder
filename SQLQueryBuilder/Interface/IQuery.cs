@@ -26,6 +26,7 @@ namespace SQLQueryBuilder.Interface
 
     public interface IQueryFilter
     {
+        IQueryFilter CreateQuery();
         IQueryFilter OrderBy(string? order);
         IQueryFilter GroupBy(string? groupBy);
         IQueryFilter Having(string? having);

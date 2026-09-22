@@ -2,7 +2,7 @@
 
 namespace SQLQueryBuilder.Model
 {
-    public sealed class SQLQuery
+    public sealed record SQLQuery
     {
         public Type? OutputDTO { get; set; } = null;
 
@@ -16,5 +16,16 @@ namespace SQLQueryBuilder.Model
         public SQLSource<List<SQLExpression>>? GroupBy { get; set; } = null;
         public SQLSource<List<OrderByExpression>>? OrderBy { get; set; } = null;
         public int? Limit { get; set; }
+
+        public SQLQuery CreateBaseCopy()
+        {
+            return this with
+            {
+                Having = null,
+                Where = null,
+                GroupBy = null,
+                OrderBy = null,
+            };
+        }
     }
 }

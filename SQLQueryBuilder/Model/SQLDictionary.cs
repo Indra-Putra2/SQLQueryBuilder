@@ -1,6 +1,5 @@
 ﻿using SQLQueryBuilder.SQLEnum;
 using System.Collections.Frozen;
-using System.IO.Pipes;
 
 namespace SQLQueryBuilder.Model
 {
@@ -54,21 +53,7 @@ namespace SQLQueryBuilder.Model
         public static readonly FrozenSet<string>.AlternateLookup<ReadOnlySpan<char>> SQLCustomDataTypeLookup =
             SQLCustomDataTypes.GetAlternateLookup<ReadOnlySpan<char>>();
 
-        public static readonly int[] _daysInMonth =
-        [
-            31, // 1
-            28, // 2
-            31, // 3
-            30, // 4
-            31, // 5
-            30, // 6
-            31, // 7
-            31, // 8
-            30, // 9
-            31, // 10
-            30, // 11
-            31  // 12
-        ];
+        public static ReadOnlySpan<int> DaysInMonth => [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
         public static readonly Dictionary<SQLTokenType, SQLBinaryOperator> ComparisonOperators =
         new()
@@ -146,28 +131,29 @@ namespace SQLQueryBuilder.Model
             SQLExpressionType.Decimal,
             SQLExpressionType.Double
         }.ToFrozenSet();
+
         //Methods
         public static bool TryGetSQLType(ReadOnlySpan<char> typeSpan, out SQLFunctionType type)
         {
-            if (typeSpan.Equals("INT", StringComparison.OrdinalIgnoreCase)) 
+            if (typeSpan.Equals("INT", StringComparison.OrdinalIgnoreCase))
             { type = SQLFunctionType.Integer; return true; }
             if (typeSpan.Equals("DOUBLE", StringComparison.OrdinalIgnoreCase))
             { type = SQLFunctionType.Double; return true; }
             if (typeSpan.Equals("DECIMAL", StringComparison.OrdinalIgnoreCase))
             { type = SQLFunctionType.Decimal; return true; }
-            if (typeSpan.Equals("STRING", StringComparison.OrdinalIgnoreCase)) 
+            if (typeSpan.Equals("STRING", StringComparison.OrdinalIgnoreCase))
             { type = SQLFunctionType.String; return true; }
-            if (typeSpan.Equals("BOOL", StringComparison.OrdinalIgnoreCase)) 
+            if (typeSpan.Equals("BOOL", StringComparison.OrdinalIgnoreCase))
             { type = SQLFunctionType.Boolean; return true; }
-            if (typeSpan.Equals("GUID", StringComparison.OrdinalIgnoreCase)) 
+            if (typeSpan.Equals("GUID", StringComparison.OrdinalIgnoreCase))
             { type = SQLFunctionType.Guid; return true; }
-            if (typeSpan.Equals("DATE", StringComparison.OrdinalIgnoreCase)) 
+            if (typeSpan.Equals("DATE", StringComparison.OrdinalIgnoreCase))
             { type = SQLFunctionType.Date; return true; }
-            if (typeSpan.Equals("TIME", StringComparison.OrdinalIgnoreCase)) 
+            if (typeSpan.Equals("TIME", StringComparison.OrdinalIgnoreCase))
             { type = SQLFunctionType.Time; return true; }
-            if (typeSpan.Equals("DATETIME", StringComparison.OrdinalIgnoreCase)) 
+            if (typeSpan.Equals("DATETIME", StringComparison.OrdinalIgnoreCase))
             { type = SQLFunctionType.DateTime; return true; }
-            if (typeSpan.Equals("BINARY", StringComparison.OrdinalIgnoreCase)) 
+            if (typeSpan.Equals("BINARY", StringComparison.OrdinalIgnoreCase))
             { type = SQLFunctionType.Binary; return true; }
             if (typeSpan.Equals("NULL", StringComparison.OrdinalIgnoreCase))
             { type = SQLFunctionType.Null; return true; }
@@ -184,6 +170,8 @@ namespace SQLQueryBuilder.Model
                 SQLFunctionType.Decimal => SQLExpressionType.Decimal,
                 SQLFunctionType.Double => SQLExpressionType.Double,
                 SQLFunctionType.String => SQLExpressionType.String,
+                SQLFunctionType.Date => SQLExpressionType.Date,
+                SQLFunctionType.Time => SQLExpressionType.Time,
                 SQLFunctionType.DateTime => SQLExpressionType.DateTime,
                 SQLFunctionType.Boolean => SQLExpressionType.Boolean,
                 SQLFunctionType.Binary => SQLExpressionType.Binary,
@@ -197,47 +185,25 @@ namespace SQLQueryBuilder.Model
         {
             type = Nullable.GetUnderlyingType(type) ?? type;
 
-            if (type == typeof(char))
-                return SQLExpressionType.String;
+            return type switch
+            {
+                _ when type == typeof(char) || type == typeof(string) => SQLExpressionType.String,
+                _ when type == typeof(bool) => SQLExpressionType.Boolean,
+                _ when type == typeof(DateOnly) => SQLExpressionType.Date,
+                _ when type == typeof(TimeOnly) => SQLExpressionType.Time,
+                _ when type == typeof(DateTime) || type == typeof(DateTimeOffset) => SQLExpressionType.DateTime,
+                _ when type == typeof(Guid) => SQLExpressionType.Guid,
+                _ when type == typeof(byte[]) => SQLExpressionType.Binary,
+                _ when type == typeof(int) => SQLExpressionType.Integer,
+                _ when type == typeof(double) => SQLExpressionType.Double,
+                _ when type == typeof(decimal) => SQLExpressionType.Decimal,
 
-            else if (type == typeof(string))
-                return SQLExpressionType.String;
-
-            else if (type == typeof(bool))
-                return SQLExpressionType.Boolean;
-
-            else if (type == typeof(DateTime) || type == typeof(DateTimeOffset))
-                return SQLExpressionType.DateTime;
-
-            else if (type == typeof(Guid))
-                return SQLExpressionType.Guid;
-
-            else if (type == typeof(byte[]))
-                return SQLExpressionType.Binary;
-
-            else if (type == typeof(short))
-                return SQLExpressionType.Unknown;
-
-            else if (type == typeof(int))
-                return SQLExpressionType.Integer;
-
-            else if (type == typeof(long))
-                return SQLExpressionType.Unknown;
-
-            else if (type == typeof(float))
-                return SQLExpressionType.Unknown;
-
-            else if (type == typeof(double))
-                return SQLExpressionType.Double;
-
-            else if (type == typeof(decimal))
-                return SQLExpressionType.Decimal;
-
-            return SQLExpressionType.Unknown;
+                _ => SQLExpressionType.Unknown
+            };
         }
         public static Type? GetCLRType(SQLExpressionType expressionType)
         {
-            return expressionType switch 
+            return expressionType switch
             {
                 SQLExpressionType.Binary => typeof(byte[]),
                 SQLExpressionType.Boolean => typeof(bool),
@@ -248,8 +214,9 @@ namespace SQLQueryBuilder.Model
                 SQLExpressionType.Decimal => typeof(decimal),
                 SQLExpressionType.Double => typeof(double),
                 SQLExpressionType.String => typeof(string),
+                SQLExpressionType.Guid => typeof(Guid),
                 SQLExpressionType.NullLiteral => null,
-                _ => throw new InvalidCastException($"expression type '{expressionType}' is not a valid CLR Type.")
+                _ => throw new InvalidCastException($"Expression type '{expressionType}' is not a valid CLR Type.")
             };
         }
     }

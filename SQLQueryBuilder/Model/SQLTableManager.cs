@@ -2,7 +2,6 @@
 using SQLQueryBuilder.Model.SQL_Expression;
 using System.Collections.ObjectModel;
 using System.Data;
-using System.Data.Common;
 using System.Reflection;
 
 namespace SQLQueryBuilder.Model
@@ -39,7 +38,7 @@ namespace SQLQueryBuilder.Model
         }
         public SQLColumnMetadata GetColumnMetadata(string originalText, ColumnExpression column)
         {
-            if(column.Table == null)
+            if (column.Table == null)
             {
                 var err = ErrorFormatter.Create(
                     originalText,
@@ -53,14 +52,14 @@ namespace SQLQueryBuilder.Model
             if (!_tables.TryGetValue(column.Table[0].Value, out var columns))
             {
                 var err = ErrorFormatter.Create(
-                    originalText, 
-                    column.Span.Start, 
-                    $"Unknown table alias '{column.Table[0].Value}'.", 
+                    originalText,
+                    column.Span.Start,
+                    $"Unknown table alias '{column.Table[0].Value}'.",
                     column.Span.Length);
 
                 throw new SyntaxErrorException(err);
             }
-                
+
 
             if (!columns.TryGetValue(column.Column.Value, out var metadata))
             {

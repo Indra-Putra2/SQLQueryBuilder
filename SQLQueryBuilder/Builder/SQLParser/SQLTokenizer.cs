@@ -6,439 +6,460 @@ using System.Globalization;
 
 namespace SQLQueryBuilder.Builder.SQLParser
 {
-    internal class SQLTokenizer
+    internal static class SQLTokenizer
     {
-        private List<SQLToken> _tokens;
-        private string _input;
-        private int _index = 0;
-
-        private char Current => _index < _input.Length ? _input[_index] : '\0';
-        private char Peek(int offset = 1)
-        {
-            var index = _index + offset;
-
-            if (index < 0)
-                return _input[0];
-
-            if (index < _input.Length)
-                return _input[index];
-
-            return '\0';
-        }
-        private char Consume() => _index < _input.Length ? _input[_index++] : '\0';
-
-        public SQLParserContext Tokenize(string sqlQuery)
+        public static SQLParserContext Tokenize(string sqlQuery)
         {
             if (string.IsNullOrWhiteSpace(sqlQuery))
-                throw new ArgumentNullException(nameof(sqlQuery), "Query string cannot be null or empty!");
+                throw new ArgumentNullException("Query string cannot be null or empty!");
 
-            _tokens = new List<SQLToken>();
-            _input = sqlQuery;
-            _index = 0;
+            var context = new SQLTokenizerContext(sqlQuery.AsSpan());
 
-            while (Current != '\0')
+            while (context.Current != '\0')
             {
-                var c = Current;
+                var c = context.Current;
 
                 // Skip Whitespace
                 if (char.IsWhiteSpace(c))
                 {
-                    Consume();
+                    context.Consume();
                     continue;
                 }
 
                 // Comments (-- or /* */)
-                if (c == '-' && Peek() == '-')
+                if (c == '-' && context.Peek() == '-')
                 {
-                    SkipSingleLineComment();
+                    SkipSingleLineComment(ref context);
                     continue;
                 }
-                if (c == '/' && Peek() == '*')
+                if (c == '/' && context.Peek() == '*')
                 {
-                    SkipMultiLineComment();
+                    SkipMultiLineComment(ref context);
                     continue;
                 }
 
                 // Numbers & Hex Literals
-                if (char.IsDigit(c) || (c == '.' && char.IsDigit(Peek())))
+                if (char.IsDigit(c) || (c == '.' && char.IsDigit(context.Peek())))
                 {
-                    if (c == '0' && (Peek() == 'x' || Peek() == 'X'))
-                        ParseHex();
+                    if (c == '0' && (context.Peek() == 'x' || context.Peek() == 'X'))
+                        ParseHex(ref context);
                     else
-                        ParseNumber();
+                        ParseNumber(ref context);
                 }
                 // Unicode Strings (e.g. N'text')
-                else if ((c == 'N' || c == 'n') && Peek() == '\'')
+                else if ((c == 'N' || c == 'n') && context.Peek() == '\'')
                 {
-                    ParseString();
+                    ParseString(ref context);
                 }
                 // Date Literals (e.g. d'2020-07-01')
-                else if ((c == 'D' || c == 'd') && Peek() == '\'')
+                else if ((c == 'D' || c == 'd') && context.Peek() == '\'')
                 {
-                    ParseDate();
+                    ParseDate(ref context);
                 }
                 // Time Literals (e.g. t'14:30:00')
-                else if ((c == 'T' || c == 't') && Peek() == '\'')
+                else if ((c == 'T' || c == 't') && context.Peek() == '\'')
                 {
-                    ParseTime();
+                    ParseTime(ref context);
                 }
                 // Datetime Literals (e.g. dt'2020-07-01 14:30:00')
-                else if ((c == 'D' || c == 'd') && (Peek() == 'T' || Peek() == 't') && Peek(2) == '\'')
+                else if ((c == 'D' || c == 'd') && (context.Peek() == 'T' || context.Peek() == 't') && context.Peek(2) == '\'')
                 {
-                    ParseDatetime();
+                    ParseDatetime(ref context);
                 }
                 // Variables (@var or @@var)
                 else if (c == '@')
                 {
-                    ParseIdentifierOrKeyword();
+                    ParseIdentifierOrKeyword(ref context);
                 }
                 // Money Literals ($100)
-                else if (c == '$' && char.IsDigit(Peek()))
+                else if (c == '$' && char.IsDigit(context.Peek()))
                 {
-                    ParseNumber();
+                    ParseNumber(ref context);
                 }
                 // Regular Identifiers OR Keywords OR NULL
                 else if (char.IsLetter(c) || c == '_')
                 {
-                    ParseIdentifierOrKeyword();
+                    ParseIdentifierOrKeyword(ref context);
                 }
                 // Quoted Identifiers
-                else if (c == '[') ParseDelimitedIdentifier(']');
-                else if (c == '"') ParseDelimitedIdentifier('"');
+                else if (c == '[') ParseDelimitedIdentifier(']',ref context);
+                else if (c == '"') ParseDelimitedIdentifier('"',ref context);
                 // Standard Strings
-                else if (c == '\'') ParseString();
+                else if (c == '\'') ParseString(ref context);
                 // Single-Character Operators & Punctuation
-                else if (c == '.') ConsumeAndAddToken(SQLTokenType.Dot, 1);
-                else if (c == ',') ConsumeAndAddToken(SQLTokenType.Comma, 1);
-                else if (c == ';') ConsumeAndAddToken(SQLTokenType.Semicolon, 1);
-                else if (c == '(') ConsumeAndAddToken(SQLTokenType.LeftParen, 1);
-                else if (c == ')') ConsumeAndAddToken(SQLTokenType.RightParen, 1);
-                else if (c == '=') ConsumeAndAddToken(SQLTokenType.Equal, 1);
+                else if (c == '.') ConsumeAndAddToken(SQLTokenType.Dot, 1, ref context);
+                else if (c == ',') ConsumeAndAddToken(SQLTokenType.Comma, 1, ref context);
+                else if (c == ';') ConsumeAndAddToken(SQLTokenType.Semicolon, 1, ref context);
+                else if (c == '(') ConsumeAndAddToken(SQLTokenType.LeftParen, 1, ref context);
+                else if (c == ')') ConsumeAndAddToken(SQLTokenType.RightParen, 1, ref context);
+                else if (c == '=') ConsumeAndAddToken(SQLTokenType.Equal, 1, ref context);
 
                 // Multi-Character Operators & Punctuation & Bitwise
                 else if (c == ':')
                 {
-                    if (Peek() == ':')
-                        ConsumeAndAddToken(SQLTokenType.ScopeResolution, 2);
+                    if (context.Peek() == ':')
+                        ConsumeAndAddToken(SQLTokenType.ScopeResolution, 2, ref context);
                     else
-                        ConsumeAndAddToken(SQLTokenType.Unknown, 1);
+                        ConsumeAndAddToken(SQLTokenType.Unknown, 1, ref context);
                 }
                 else if (c == '+')
                 {
-                    if (Peek() == '=')
-                        ConsumeAndAddToken(SQLTokenType.PlusEquals, 2);
+                    if (context.Peek() == '=')
+                        ConsumeAndAddToken(SQLTokenType.PlusEquals, 2, ref context);
                     else
-                        ConsumeAndAddToken(SQLTokenType.Plus, 1);
+                        ConsumeAndAddToken(SQLTokenType.Plus, 1, ref context);
                 }
                 else if (c == '-')
                 {
-                    if (Peek() == '=')
-                        ConsumeAndAddToken(SQLTokenType.MinusEquals, 2);
+                    if (context.Peek() == '=')
+                        ConsumeAndAddToken(SQLTokenType.MinusEquals, 2, ref context);
                     else
-                        ConsumeAndAddToken(SQLTokenType.Minus, 1);
+                        ConsumeAndAddToken(SQLTokenType.Minus, 1, ref context);
                 }
                 else if (c == '/')
                 {
-                    if (Peek() == '=')
-                        ConsumeAndAddToken(SQLTokenType.DivideEquals, 2);
+                    if (context.Peek() == '=')
+                        ConsumeAndAddToken(SQLTokenType.DivideEquals, 2, ref context);
                     else
-                        ConsumeAndAddToken(SQLTokenType.Divide, 1);
+                        ConsumeAndAddToken(SQLTokenType.Divide, 1, ref context);
                 }
                 else if (c == '*')
                 {
-                    if (Peek() == '=')
-                        ConsumeAndAddToken(SQLTokenType.MultiplyEquals, 2);
+                    if (context.Peek() == '=')
+                        ConsumeAndAddToken(SQLTokenType.MultiplyEquals, 2, ref context);
                     else
-                        ConsumeAndAddToken(SQLTokenType.Asterisk, 1);
+                        ConsumeAndAddToken(SQLTokenType.Asterisk, 1, ref context);
                 }
                 else if (c == '%')
                 {
-                    if (Peek() == '=')
-                        ConsumeAndAddToken(SQLTokenType.ModuloEquals, 2);
+                    if (context.Peek() == '=')
+                        ConsumeAndAddToken(SQLTokenType.ModuloEquals, 2, ref context);
                     else
-                        ConsumeAndAddToken(SQLTokenType.Modulo, 1);
+                        ConsumeAndAddToken(SQLTokenType.Modulo, 1, ref context);
                 }
 
                 else if (c == '<')
                 {
-                    if (Peek() == '=')
-                        ConsumeAndAddToken(SQLTokenType.LessThanOrEqual, 2);
-                    else if (Peek() == '>')
-                        ConsumeAndAddToken(SQLTokenType.NotEqual, 2);
-                    else if (Peek() == '<')
-                        ConsumeAndAddToken(SQLTokenType.BitwiseLeftShift, 2);
+                    if (context.Peek() == '=')
+                        ConsumeAndAddToken(SQLTokenType.LessThanOrEqual, 2, ref context);
+                    else if (context.Peek() == '>')
+                        ConsumeAndAddToken(SQLTokenType.NotEqual, 2, ref context);
+                    else if (context.Peek() == '<')
+                        ConsumeAndAddToken(SQLTokenType.BitwiseLeftShift, 2, ref context);
                     else
-                        ConsumeAndAddToken(SQLTokenType.LessThan, 1);
+                        ConsumeAndAddToken(SQLTokenType.LessThan, 1, ref context);
                 }
                 else if (c == '>')
                 {
-                    if (Peek() == '=')
-                        ConsumeAndAddToken(SQLTokenType.GreaterThanOrEqual, 2);
-                    else if (Peek() == '>')
-                        ConsumeAndAddToken(SQLTokenType.BitwiseRightShift, 2);
+                    if (context.Peek() == '=')
+                        ConsumeAndAddToken(SQLTokenType.GreaterThanOrEqual, 2, ref context);
+                    else if (context.Peek() == '>')
+                        ConsumeAndAddToken(SQLTokenType.BitwiseRightShift, 2, ref context);
                     else
-                        ConsumeAndAddToken(SQLTokenType.GreaterThan, 1);
+                        ConsumeAndAddToken(SQLTokenType.GreaterThan, 1, ref context);
                 }
                 else if (c == '!')
                 {
-                    if (Peek() == '=') ConsumeAndAddToken(SQLTokenType.NotEqual, 2);
-                    else ConsumeAndAddToken(SQLTokenType.Unknown, 1);
+                    if (context.Peek() == '=') ConsumeAndAddToken(SQLTokenType.NotEqual, 2, ref context);
+                    else ConsumeAndAddToken(SQLTokenType.Unknown, 1, ref context);
                 }
 
                 // Bitwise Operator
-                else if (c == '~') ConsumeAndAddToken(SQLTokenType.BitwiseNot, 1);
-                else if (c == '&') ConsumeAndAddToken(SQLTokenType.BitwiseAnd, 1);
-                else if (c == '|') ConsumeAndAddToken(SQLTokenType.BitwiseOr, 1);
-                else if (c == '^') ConsumeAndAddToken(SQLTokenType.BitwiseXor, 1);
+                else if (c == '~') ConsumeAndAddToken(SQLTokenType.BitwiseNot, 1, ref context);
+                else if (c == '&') ConsumeAndAddToken(SQLTokenType.BitwiseAnd, 1, ref context);
+                else if (c == '|') ConsumeAndAddToken(SQLTokenType.BitwiseOr, 1, ref context);
+                else if (c == '^') ConsumeAndAddToken(SQLTokenType.BitwiseXor, 1, ref context);
 
                 // Custom Syntax
-                else if (c == '?') ConsumeAndAddToken(SQLTokenType.SQLTypeNullable, 1);
+                else if (c == '?') ConsumeAndAddToken(SQLTokenType.SQLTypeNullable, 1, ref context);
                 else
                 {
-                    ConsumeAndAddToken(SQLTokenType.Unknown, 1);
+                    ConsumeAndAddToken(SQLTokenType.Unknown, 1, ref context);
                 }
             }
 
-            _tokens.Add(new SQLToken(SQLTokenType.EOF, _input.Length, 0));
+            context.Tokens.Add(new SQLToken(SQLTokenType.EOF, context.Span.Length, 0));
 
-            return new SQLParserContext(sqlQuery, _tokens);
+            return new SQLParserContext(sqlQuery, context.Tokens);
         }
 
         #region Helper Parsing Methods
-        private void SkipSingleLineComment()
+        private static void SkipSingleLineComment(ref SQLTokenizerContext context)
         {
-            while (Current != '\0' && Current != '\n' && Current != '\r')
+            while (context.Current != '\0' && context.Current != '\n' && context.Current != '\r')
             {
-                Consume();
+                context.Consume();
             }
         }
-        private void SkipMultiLineComment()
+        private static void SkipMultiLineComment(ref SQLTokenizerContext context)
         {
-            var start = _index;
+            var start = context.Index;
 
-            Consume(); // Consume '/'
-            Consume(); // Consume '*'
+            context.Consume(); // Consume '/'
+            context.Consume(); // Consume '*'
 
-            while (Current != '\0')
+            while (context.Current != '\0')
             {
-                if (Current == '*' && Peek() == '/')
+                if (context.Current == '*' && context.Peek() == '/')
                 {
-                    Consume(); // Consume '*'
-                    Consume(); // Consume '/'
+                    context.Consume(); // Consume '*'
+                    context.Consume(); // Consume '/'
                     return;
                 }
-                Consume();
+                context.Consume();
             }
 
             throw new FormatException(
             ErrorFormatter.Create(
-                _input,
+                context.Span.ToString(),
                 start,
                 "Unterminated multi-line comment!"));
         }
-        private void ParseDate()
+        private static void ParseDate(ref SQLTokenizerContext context)
         {
-            int start = _index;
-            var format = "YYYY-MM-DD";
-            Consume(); // D/d
-            Consume(); // '
+            var start = context.Index;
 
-            int year = ParseDatePart(start, "year", 4, format);
-            ExpectHyphen(start, format);
+            context.Consume(); // D/d
+            context.Consume(); // '
 
-            int month = ParseDatePart(start, "month", 2, format);
-            ExpectHyphen(start, format);
+            // Initiate Year context
+            var dateContext = new SQLTokenizerDateTimeContext(context.Index, 4, "Year", "YYYY-MM-DD");
 
-            int day = ParseDatePart(start, "day", 2, format);
+            dateContext.Year = ParseDatePart(ref context,ref dateContext);
+            ExpectHyphen(ref context,ref dateContext);
 
-            if (Current != '\'')
-                ThrowTemporalError(start, "Unterminated date literal.", format);
+            // Change to Month Context
+            dateContext.Start = context.Index;
+            dateContext.ExpectedDigit = 2;
+            dateContext.Name = "Month";
 
-            ValidateDate(start, year, month, day, format);
+            dateContext.Month = ParseDatePart(ref context,ref dateContext);
+            ExpectHyphen(ref context,ref dateContext);
 
-            Consume(); // '
+            // Change to Day Context
+            dateContext.Start = context.Index;
+            dateContext.Name = "Day";
 
-            AddToken(SQLTokenType.DateLiteral, start);
+            dateContext.Day = ParseDatePart(ref context,ref dateContext);
+
+            if (context.Current != '\'')
+                ThrowTemporalError("Unterminated date literal.", ref context,ref dateContext);
+
+            ValidateDate(ref context,ref dateContext);
+
+            context.Consume(); // '
+
+            AddToken(SQLTokenType.DateLiteral, start, ref context);
         }
-        private void ParseTime()
+        private static void ParseTime(ref SQLTokenizerContext context)
         {
-            var start = _index;
-            var format = "HH:MM:SS[.fffffff]";
+            var start = context.Index;
 
-            Consume(); // T/t
-            Consume(); // '
+            context.Consume(); // T/t
+            context.Consume(); // '
+            
+            // Initiate Hour context
+            var dateContext = new SQLTokenizerDateTimeContext(context.Index, 2, "Hour", "HH:MM:SS[.fffffff]");
 
-            var hours = ParseDatePart(start, "Hour", 2, format);
-            ExpectColon(start, format);
+            dateContext.Hour = ParseDatePart(ref context,ref dateContext);
+            ExpectColon(ref context,ref dateContext);
 
-            var minutes = ParseDatePart(start, "Minute", 2, format);
-            ExpectColon(start, format);
+            // Change to Minute Context
+            dateContext.Start = context.Index;
+            dateContext.Name = "Minute";
 
-            var seconds = ParseDateSeconds(start, format);
+            dateContext.Minute = ParseDatePart(ref context,ref dateContext);
+            ExpectColon(ref context,ref dateContext);
 
-            if (Current != '\'')
-                ThrowTemporalError(start, "Invalid time literal.", format);
+            dateContext.Second = ParseDateSeconds(ref context,ref dateContext);
 
-            ValidateTime(start, hours, minutes, seconds, format);
+            if (context.Current != '\'')
+                ThrowTemporalError("Invalid time literal.", ref context,ref dateContext);
 
-            Consume(); // '
+            ValidateTime(ref context,ref dateContext);
 
-            AddToken(SQLTokenType.TimeLiteral, start);
+            context.Consume(); // '
+
+            AddToken(SQLTokenType.TimeLiteral, start, ref context);
         }
-        private void ParseDatetime()
+        private static void ParseDatetime(ref SQLTokenizerContext context)
         {
-            var start = _index;
-            var format = "YYYY-MM-DD HH:MM:SS[.fffffff]";
+            var start = context.Index;
 
-            Consume(); // D/d
-            Consume(); // T/t
-            Consume(); // '
+            context.Consume(); // D/d
+            context.Consume(); // T/t
+            context.Consume(); // '
+            
+            // Initiate Year context
+            var dateContext = new SQLTokenizerDateTimeContext(context.Index, 4, "Year", "YYYY-MM-DD HH:MM:SS[.fffffff]");
 
-            int year = ParseDatePart(start, "year", 4, format);
-            ExpectHyphen(start, format);
+            dateContext.Year = ParseDatePart(ref context,ref dateContext);
+            ExpectHyphen(ref context,ref dateContext);
 
-            int month = ParseDatePart(start, "month", 2, format);
-            ExpectHyphen(start, format);
+            // Change to Month Context
+            dateContext.Start = context.Index;
+            dateContext.ExpectedDigit = 2;
+            dateContext.Name = "Month";
 
-            int day = ParseDatePart(start, "day", 2, format);
+            dateContext.Month = ParseDatePart(ref context,ref dateContext);
+            ExpectHyphen(ref context,ref dateContext);
 
-            if (Current != ' ')
-                ThrowTemporalError(start, "Invalid datetime literal.", format);
+            // Change to Day Context
+            dateContext.Start = context.Index;
+            dateContext.Name = "Day";
 
-            Consume();
+            dateContext.Day = ParseDatePart(ref context,ref dateContext);
 
-            var hours = ParseDatePart(start, "Hour", 2, format);
-            ExpectColon(start, format);
+            if (context.Current != ' ')
+                ThrowTemporalError("Invalid datetime literal.",ref context,ref dateContext);
 
-            var minutes = ParseDatePart(start, "Minute", 2, format);
-            ExpectColon(start, format);
+            context.Consume();
 
-            var seconds = ParseDateSeconds(start, format);
+            // Change to Hour Context
+            dateContext.Start = context.Index;
+            dateContext.Name = "Hour";
 
-            if (Current != '\'')
-                ThrowTemporalError(start, "Invalid datetime literal.", format);
+            dateContext.Hour = ParseDatePart(ref context,ref dateContext);
+            ExpectColon(ref context,ref dateContext);
 
-            ValidateDate(start, year, month, day, format);
-            ValidateTime(start, hours, minutes, seconds, format);
+            // Change to Minute Context
+            dateContext.Start = context.Index;
+            dateContext.Name = "Minutes";
 
-            Consume(); // '
+            dateContext.Minute = ParseDatePart(ref context,ref dateContext);
+            ExpectColon(ref context,ref dateContext);
 
-            AddToken(SQLTokenType.DatetimeLiteral, start);
+            // Change to Second Context
+            dateContext.Start = context.Index;
+            dateContext.Name = "Second";
+
+            dateContext.Second = ParseDateSeconds(ref context,ref dateContext);
+
+            if (context.Current != '\'')
+                ThrowTemporalError("Invalid datetime literal.", ref context,ref dateContext);
+
+            ValidateDate(ref context,ref dateContext);
+            ValidateTime(ref context,ref dateContext);
+
+            context.Consume(); // '
+
+            AddToken(SQLTokenType.DatetimeLiteral, start, ref context);
         }
-        private void ParseHex()
+        private static void ParseHex(ref SQLTokenizerContext context)
         {
-            var start = _index;
+            var start = context.Index;
 
-            Consume(); // Consume 0
-            Consume(); // Consume x
+            context.Consume(); // Consume 0
+            context.Consume(); // Consume x
 
-            var digitStart = _index;
+            var digitStart = context.Index;
 
-            while (Current != '\0' && IsHexDigit(Current))
-                Consume();
+            while (context.Current != '\0' && IsHexDigit(context.Current))
+                context.Consume();
 
-            if (_index == digitStart)
+            if (context.Index == digitStart)
             {
-                var num = _input.Substring(start, _index - start);
+                var num = context.Span.Slice(start, context.Index - start);
                 throw new FormatException(
                     ErrorFormatter.Create(
-                        _input,
-                        _index,
+                        context.Span.ToString(),
+                        context.Index,
                         $"Hex literal requires digits '{num}'"));
             }
 
-            AddToken(SQLTokenType.HexLiteral, start);
+            AddToken(SQLTokenType.HexLiteral, start, ref context);
         }
-        private void ParseString()
+        private static void ParseString(ref SQLTokenizerContext context)
         {
-            int start = _index;
+            int start = context.Index;
             SQLTokenType type = SQLTokenType.StringLiteral;
 
-            if (Current == 'n' || Current == 'N')
+            if (context.Current == 'n' || context.Current == 'N')
             {
-                Consume(); // Consume n/N
+                context.Consume(); // Consume n/N
                 type = SQLTokenType.UnicodeString;
             }
 
-            Consume(); // Consume opening quote
+            context.Consume(); // Consume opening quote
 
-            while (Current != '\0')
+            while (context.Current != '\0')
             {
-                if (Current == '\'')
+                if (context.Current == '\'')
                 {
-                    if (Peek() == '\'')
+                    if (context.Peek() == '\'')
                     {
-                        Consume(); // First quote
-                        Consume(); // Second quote
+                        context.Consume(); // First quote
+                        context.Consume(); // Second quote
 
                         continue;
                     }
 
-                    Consume(); // Close quote
-                    AddToken(type, start);
+                    context.Consume(); // Close quote
+                    AddToken(type, start, ref context);
                     return;
                 }
-                Consume();
+                context.Consume();
             }
 
-            throw new FormatException(ErrorFormatter.Create(_input, _index, "Unterminated string literal!"));
+            throw new FormatException(ErrorFormatter.Create(context.Span.ToString(), context.Index, "Unterminated string literal!"));
         }
-        private void ParseDelimitedIdentifier(char closingChar)
+        private static void ParseDelimitedIdentifier(char closingChar, ref SQLTokenizerContext context)
         {
-            int start = _index;
-            Consume(); // Opening quote/bracket
+            int start = context.Index;
+            context.Consume(); // Opening quote/bracket
 
-            while (Current != '\0')
+            while (context.Current != '\0')
             {
-                if (Current == closingChar)
+                if (context.Current == closingChar)
                 {
-                    if (Peek() == closingChar)
+                    if (context.Peek() == closingChar)
                     {
-                        Consume(); // First quote/bracket
-                        Consume(); // Second quote/bracket
+                        context.Consume(); // First quote/bracket
+                        context.Consume(); // Second quote/bracket
                         continue;
                     }
 
-                    Consume(); // Close quote/bracket
+                    context.Consume(); // Close quote/bracket
                     AddToken(
                         closingChar == ']'
                             ? SQLTokenType.BracketIdentifier
                             : SQLTokenType.DoubleQuoteIdentifier,
-                        start);
+                        start,
+                        ref context);
 
                     return;
                 }
-                Consume();
+                context.Consume();
             }
 
-            throw new FormatException(ErrorFormatter.Create(_input, _index, $"Unterminated quoted identifier, missing '{closingChar}'"));
+            throw new FormatException(ErrorFormatter.Create(context.Span.ToString(), context.Index, $"Unterminated quoted identifier, missing '{closingChar}'"));
         }
-        private void ParseNumber()
+        private static void ParseNumber(ref SQLTokenizerContext context)
         {
-            var start = _index;
+            var start = context.Index;
             var dotCount = 0;
             var hasDigit = false;
             SQLTokenType type = SQLTokenType.IntegerLiteral;
 
-            if (Current == '$')
+            if (context.Current == '$')
             {
                 type = SQLTokenType.MoneyLiteral;
-                Consume();
+                context.Consume();
             }
 
-            while (char.IsDigit(Current) || Current == '.')
+            while (char.IsDigit(context.Current) || context.Current == '.')
             {
-                if (char.IsDigit(Current) && !hasDigit)
+                if (char.IsDigit(context.Current) && !hasDigit)
                     hasDigit = true;
 
-                if (Current == '.')
+                if (context.Current == '.')
                 {
                     dotCount++;
 
                     if (dotCount > 1)
                     {
-                        var num = _input.Substring(start, _index - start);
-                        var err = ErrorFormatter.Create(_input, _index, $"Multiple decimal points '{num}'");
+                        var num = context.Span.Slice(start, context.Index - start);
+                        var err = ErrorFormatter.Create(context.Span.ToString(), context.Index, $"Multiple decimal points '{num}'");
                         throw new FormatException(err);
                     }
 
@@ -446,73 +467,73 @@ namespace SQLQueryBuilder.Builder.SQLParser
                         type = SQLTokenType.DecimalLiteral;
                 }
 
-                Consume();
+                context.Consume();
             }
 
             if (!hasDigit)
             {
-                var num = _input.Substring(start, _index - start);
-                var err = ErrorFormatter.Create(_input, _index, $"Number requires digits '{num}'");
+                var num = context.Span.Slice(start, context.Index - start);
+                var err = ErrorFormatter.Create(context.Span.ToString(), context.Index, $"Number requires digits '{num}'");
                 throw new FormatException(err);
             }
 
             // Scientific notation
-            if (Current == 'e' || Current == 'E')
+            if (context.Current == 'e' || context.Current == 'E')
             {
-                Consume();
+                context.Consume();
 
-                if (Current == '+' || Current == '-')
-                    Consume();
+                if (context.Current == '+' || context.Current == '-')
+                    context.Consume();
 
 
-                if (!char.IsDigit(Current))
+                if (!char.IsDigit(context.Current))
                 {
-                    var num = _input.Substring(start, _index - start);
-                    var err = ErrorFormatter.Create(_input, _index, $"Invalid scientific notation '{num}'");
+                    var num = context.Span.Slice(start, context.Index - start);
+                    var err = ErrorFormatter.Create(context.Span.ToString(), context.Index, $"Invalid scientific notation '{num}'");
                     throw new FormatException(err);
                 }
 
-                while (char.IsDigit(Current))
-                    Consume();
+                while (char.IsDigit(context.Current))
+                    context.Consume();
 
-                if (Current == 'e' || Current == 'E')
+                if (context.Current == 'e' || context.Current == 'E')
                 {
-                    var num = _input.Substring(start, _index - start);
-                    var err = ErrorFormatter.Create(_input, _index, $"Too many Exponent Marker '{num}'");
+                    var num = context.Span.Slice(start, context.Index - start);
+                    var err = ErrorFormatter.Create(context.Span.ToString(), context.Index, $"Too many Exponent Marker '{num}'");
                     throw new FormatException(err);
                 }
 
-                if (Current == '.')
+                if (context.Current == '.')
                 {
-                    var num = _input.Substring(start, _index - start);
-                    var err = ErrorFormatter.Create(_input, _index, $"Exponent must be integer '{num}'");
+                    var num = context.Span.Slice(start, context.Index - start);
+                    var err = ErrorFormatter.Create(context.Span.ToString(), context.Index, $"Exponent must be integer '{num}'");
                     throw new FormatException(err);
                 }
 
                 type = SQLTokenType.ScientificLiteral;
             }
 
-            AddToken(type, start);
+            AddToken(type, start, ref context);
         }
-        private void ParseIdentifierOrKeyword()
+        private static void ParseIdentifierOrKeyword(ref SQLTokenizerContext context)
         {
-            var start = _index;
+            var start = context.Index;
             SQLTokenType type = SQLTokenType.Identifier;
 
-            if (Current == '@')
+            if (context.Current == '@')
             {
-                Consume();
-                if (Current == '@')
-                    Consume();
+                context.Consume();
+                if (context.Current == '@')
+                    context.Consume();
                 type = SQLTokenType.Variable;
             }
 
-            while (Current != '\0' && (char.IsLetterOrDigit(Current) || Current == '_'))
+            while (context.Current != '\0' && (char.IsLetterOrDigit(context.Current) || context.Current == '_'))
             {
-                Consume();
+                context.Consume();
             }
 
-            var text = _input.AsSpan(start, _index - start);
+            var text = context.Span.Slice(start, context.Index - start);
 
             if (text.Equals("NULL", StringComparison.OrdinalIgnoreCase))
                 type = SQLTokenType.NullLiteral;
@@ -523,55 +544,64 @@ namespace SQLQueryBuilder.Builder.SQLParser
             else if (SQLDictionary.SQLCustomDataTypeLookup.Contains(text))
                 type = SQLTokenType.SQLType;
 
-            AddToken(type, start);
+            AddToken(type, start, ref context);
         }
-        private void ConsumeAndAddToken(SQLTokenType type, int amount)
+        private static void ConsumeAndAddToken(SQLTokenType type, int amount, ref SQLTokenizerContext context)
         {
-            var start = _index;
+            var start = context.Index;
 
-            if (amount < 0 || amount > _input.Length - _index)
+            if (amount < 0 || amount > context.Span.Length - context.Index)
                 throw new ArgumentOutOfRangeException(nameof(amount));
 
-            _index += amount;
+            context.AdvanceIndex(amount);
 
-            AddToken(type, start);
+            AddToken(type, start, ref context);
         }
-        private int ParseDatePart(int start, string name, int expectedDigits, string format)
+        private static int ParseDatePart(ref SQLTokenizerContext context,ref SQLTokenizerDateTimeContext dateContext)
         {
             // 1. Ensure have enough characters left in the input to even read expectedDigits
-            if (_index + expectedDigits > _input.Length)
-                ThrowTemporalError(start, $"Invalid {name}.", format);
+            if (context.Index + dateContext.ExpectedDigit > context.Span.Length)
+                ThrowTemporalError($"Invalid {dateContext.Name}", ref context,ref dateContext);
 
             // 2. Slice exact target window zero-allocation
-            ReadOnlySpan<char> partSpan = _input.AsSpan(_index, expectedDigits);
+            ReadOnlySpan<char> partSpan = context.Span.Slice(context.Index, dateContext.ExpectedDigit);
 
             // 3. Fast-parse integer from span (implicitly validates digit format)
-            if (!int.TryParse(partSpan, out int value))
-            {
-                ThrowTemporalError(start, $"Invalid {name}.", format);
-            }
+            int value = 0;
 
+            foreach (char c in partSpan)
+            {
+                if (c < '0' || c > '9')
+                {
+                    ThrowTemporalError(
+                        $"Invalid {dateContext.Name} {partSpan}",
+                        ref context,
+                        ref dateContext);
+                }
+
+                value = value * 10 + (c - '0');
+            }
             // Advance position by expectedDigits
-            _index += expectedDigits;
+            context.AdvanceIndex(dateContext.ExpectedDigit);
 
             return value;
         }
-        private decimal ParseDateSeconds(int start, string format)
+        private static decimal ParseDateSeconds(ref SQLTokenizerContext context,ref SQLTokenizerDateTimeContext dateContext)
         {
-            int partStart = _index;
+            int partStart = context.Index;
 
             // 1. Advance the lexer pointer past all valid second characters (digits and dot)
-            while (Current != '\0' && (char.IsDigit(Current) || Current == '.'))
+            while (context.Current != '\0' && (char.IsDigit(context.Current) || context.Current == '.'))
             {
-                Consume();
+                context.Consume();
             }
 
             // 2. Extract zero-allocation slice of the seconds segment
-            ReadOnlySpan<char> secondsSpan = _input.AsSpan(partStart, _index - partStart);
+            ReadOnlySpan<char> secondsSpan = context.Span.Slice(partStart, context.Index - partStart);
 
             if (secondsSpan.IsEmpty)
             {
-                ThrowTemporalError(start, "Invalid seconds.", format);
+                ThrowTemporalError("Invalid seconds.", ref context,ref dateContext);
             }
 
             // 3. Fast structural validation on the span
@@ -581,21 +611,21 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 // Check for multiple decimal points
                 if (secondsSpan[(dotIndex + 1)..].Contains('.'))
                 {
-                    ThrowTemporalError(start, "Multiple decimal points.", format);
+                    ThrowTemporalError("Multiple decimal points.", ref context,ref dateContext);
                 }
 
                 // Check fractional digit count (max 7 digits)
                 int fractionalCount = secondsSpan.Length - (dotIndex + 1);
                 if (fractionalCount > 7)
                 {
-                    ThrowTemporalError(start, $"Seconds cannot have more than 7 fractional digits.", format);
+                    ThrowTemporalError("Seconds cannot have more than 7 fractional digits.", ref context,ref dateContext);
                 }
             }
 
             // 4. Single-pass parse directly off the span
             if (!decimal.TryParse(secondsSpan, CultureInfo.InvariantCulture, out decimal value))
             {
-                ThrowTemporalError(start, "Invalid seconds.", format);
+                ThrowTemporalError("Invalid seconds.", ref context,ref dateContext);
             }
 
             return value;
@@ -605,53 +635,59 @@ namespace SQLQueryBuilder.Builder.SQLParser
         #region Helper
         private static bool IsHexDigit(char c) =>
             (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
-        private void AddToken(SQLTokenType type, int start)
+        private static void AddToken(SQLTokenType type, int start, ref SQLTokenizerContext context)
         {
-            _tokens.Add(new SQLToken(
+            context.Tokens.Add(new SQLToken(
                 type,
                 start,
-                _index - start));
+                context.Index - start));
         }
-        private void ThrowTemporalError(int start, string message, string format)
+        private static void ThrowTemporalError(string message, ref SQLTokenizerContext context,ref SQLTokenizerDateTimeContext dateContext)
         {
-            var num = _input.Substring(start, _index - start);
-            var err = ErrorFormatter.Create(_input, start, $"{message} {num}. Expected format: {format}.", num.Length + 1);
+            var err = ErrorFormatter.Create(
+                context.Span.ToString(), 
+                dateContext.Start, 
+                $"{message}. Expected format: {dateContext.Format}.");
             throw new FormatException(err);
         }
-        private void ExpectHyphen(int start, string format)
+        private static void ExpectHyphen(ref SQLTokenizerContext context,ref SQLTokenizerDateTimeContext dateContext)
         {
-            if (Current != '-')
-                ThrowTemporalError(start, "Expected '-' in date.", format);
+            if (context.Current != '-')
+                ThrowTemporalError("Expected '-' in date.", ref context,ref dateContext);
 
-            Consume();
+            context.Consume();
         }
-        private void ExpectColon(int start, string format)
+        private static void ExpectColon(ref SQLTokenizerContext context,ref SQLTokenizerDateTimeContext dateContext)
         {
-            if (Current != ':')
-                ThrowTemporalError(start, "Expected ':' in time.", format);
+            if (context.Current != ':')
+                ThrowTemporalError("Expected ':' in time.", ref context,ref dateContext);
 
-            Consume();
+            context.Consume();
         }
-        private void ValidateTime(int start, int hours, int minutes, decimal seconds, string format)
+        private static void ValidateTime(ref SQLTokenizerContext context,ref SQLTokenizerDateTimeContext dateContext)
         {
-            if (hours is < 0 or > 23)
-                ThrowTemporalError(start, $"Invalid hours {hours}.", format);
+            var format = dateContext.Format;
 
-            if (minutes is < 0 or > 59)
-                ThrowTemporalError(start, $"Invalid minutes {minutes}.", format);
+            if (dateContext.Hour is < 0 or > 23)
+                ThrowTemporalError($"Invalid hours {dateContext.Hour}.", ref context,ref dateContext);
 
-            if (seconds < 0 || seconds >= 60)
-                ThrowTemporalError(start, $"Invalid seconds {seconds}.", format);
+            if (dateContext.Minute is < 0 or > 59)
+                ThrowTemporalError($"Invalid minutes {dateContext.Minute}.", ref context,ref dateContext);
+
+            if (dateContext.Second < 0 || dateContext.Second >= 60)
+                ThrowTemporalError($"Invalid seconds {dateContext.Second}.", ref context,ref dateContext);
         }
-        private void ValidateDate(int start, int year, int month, decimal day, string format)
+        private static void ValidateDate(ref SQLTokenizerContext context,ref SQLTokenizerDateTimeContext dateContext)
         {
+            var month = dateContext.Month;
             if (month is < 1 or > 12)
-                ThrowTemporalError(start, $"Invalid month {month}.", format);
+                ThrowTemporalError($"Invalid month {month}.", ref context,ref dateContext);
 
-            int maxDay = SQLDictionary._daysInMonth[month - 1];
+            int maxDay = SQLDictionary.DaysInMonth[month - 1];
 
+            var day = dateContext.Day;
             if (day is < 1 || day > maxDay)
-                ThrowTemporalError(start, $"Invalid day {day}.", format);
+                ThrowTemporalError($"Invalid day {day}.", ref context,ref dateContext);
         }
         #endregion
     }

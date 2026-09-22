@@ -28,7 +28,18 @@ namespace SQLQueryBuilder.Builder
                 OutputDTO = typeof(TBase)
             };
         }
+        private QueryBuilderImpl(
+            SQLQuery query,
+            SQLBuilderHelper builderHelper,
+            SQLSemanticValidator validator)
+        {
+            _query = query;
+            _builderHelper = builderHelper;
+            _validator = validator;
+            _queryGenerator = new SQLGenerator();
 
+            _baseValidated = true;
+        }
         public IQuerySelect From<T>(string tableAlias)
         {
             var rawName = GetTableName<T>();
@@ -152,6 +163,14 @@ namespace SQLQueryBuilder.Builder
             _queryGenerator.BuildBaseQuery(_query);
             _baseValidated = true;
             return this;
+        }
+
+        public IQueryFilter CreateQuery()
+        {
+            return new QueryBuilderImpl<TBase>(
+                _query.CreateBaseCopy(),
+                new SQLBuilderHelper(),
+                new SQLSemanticValidator());
         }
 
         public SQLQueryResult Build()

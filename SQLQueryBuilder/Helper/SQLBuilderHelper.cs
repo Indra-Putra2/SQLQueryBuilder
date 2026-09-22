@@ -11,7 +11,6 @@ namespace SQLQueryBuilder.Helper
 {
     public class SQLBuilderHelper
     {
-        private SQLTokenizer _tokenizer = new SQLTokenizer();
         private SQLExpressionParser _expressionParser = new SQLExpressionParser();
         private SQLSelectParser _selectParser = new SQLSelectParser();
         private SQLPredicateParser _predicateParser = new SQLPredicateParser();
@@ -22,7 +21,7 @@ namespace SQLQueryBuilder.Helper
 
         public SQLParserContext BuildTokens(string input)
         {
-            return _tokenizer.Tokenize(input);
+            return SQLTokenizer.Tokenize(input);
         }
 
         public SQLExpression BuildExpression(string input, bool validateEnd = true)
