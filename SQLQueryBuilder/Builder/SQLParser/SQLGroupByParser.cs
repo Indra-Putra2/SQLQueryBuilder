@@ -6,41 +6,38 @@ using System.Data;
 
 namespace SQLQueryBuilder.Builder.SQLParser
 {
-    internal class SQLGroupByParser
+    internal static class SQLGroupByParser
     {
-        private SQLParserHelper _helper;
-        private SQLExpressionParser _expressionParser = new();
-        public List<SQLExpression> Parse(SQLParserContext context)
+        public static List<SQLExpression> Parse(ref SQLParserContext context)
         {
-            _helper = new SQLParserHelper(context);
             var selected = new List<SQLExpression>();
 
-            if (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Comma))
+            if (!context.IsAtEnd && SQLParserHelper.Expect(context.Current, SQLTokenType.Comma))
             {
                 var err = ErrorFormatter.Create(
-                    _helper.Input,
-                    _helper.Current.StartPosition,
-                    $"Expected Expression but got '{_helper.GetSlice(_helper.Current)}'",
-                    errorTextLength: _helper.Current.Length);
+                    context.Span.ToString(),
+                    context.Current.StartPosition,
+                    $"Expected Expression but got '{context.GetSlice(context.Current)}'",
+                    errorTextLength: context.Current.Length);
                 throw new SyntaxErrorException(err);
             }
 
-            selected.Add(_expressionParser.Parse(_helper));
+            selected.Add(SQLExpressionParser.Parse(ref context));
 
-            while (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Comma))
+            while (!context.IsAtEnd && SQLParserHelper.Expect(context.Current, SQLTokenType.Comma))
             {
-                _helper.Consume(); // Consume ','
+                context.Consume(); // Consume ','
 
-                selected.Add(_expressionParser.Parse(_helper));
+                selected.Add(SQLExpressionParser.Parse(ref context));
             }
 
-            if (!_helper.Expect(_helper.Current, SQLTokenType.EOF))
+            if (!SQLParserHelper.Expect(context.Current, SQLTokenType.EOF))
             {
                 var err = ErrorFormatter.Create(
-                    _helper.Input,
-                    _helper.Current.StartPosition,
-                    $"Unexpected token '{_helper.GetSlice(_helper.Current)}' after end of expression.",
-                    errorTextLength: _helper.Current.Length);
+                    context.Span.ToString(),
+                    context.Current.StartPosition,
+                    $"Unexpected token '{context.GetSlice(context.Current)}' after end of expression.",
+                    errorTextLength: context.Current.Length);
 
                 throw new SyntaxErrorException(err);
             }

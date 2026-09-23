@@ -7,93 +7,81 @@ using System.Data;
 
 namespace SQLQueryBuilder.Builder.SQLParser
 {
-    internal class SQLOrderByParser
+    internal static class SQLOrderByParser
     {
-        private SQLParserHelper _helper;
-        private SQLExpressionParser _expressionParser = new();
-        public List<OrderByExpression> Parse(SQLParserContext context)
+        public static List<OrderByExpression> Parse(ref SQLParserContext context)
         {
-            _helper = new SQLParserHelper(context);
             var orderBy = new List<OrderByExpression>();
 
-            if (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Comma))
+            if (!context.IsAtEnd && SQLParserHelper.Expect(context.Current, SQLTokenType.Comma))
             {
                 var err = ErrorFormatter.Create(
-                    _helper.Input,
-                    _helper.Current.StartPosition,
-                    $"Expected Expression but got '{_helper.GetSlice(_helper.Current)}'",
-                    errorTextLength: _helper.Current.Length);
+                    context.Span.ToString(),
+                    context.Current.StartPosition,
+                    $"Expected Expression but got '{context.GetSlice(context.Current)}'",
+                    errorTextLength: context.Current.Length);
                 throw new SyntaxErrorException(err);
             }
-            var expr = _expressionParser.Parse(_helper);
+            var expr = SQLExpressionParser.Parse(ref context);
             var desc = false;
-            SQLToken lastToken = _helper.Current;
+            SQLToken lastToken = context.Current;
 
-            if (_helper.IsKeyword(_helper.Current, "DESC"))
+            if (SQLParserHelper.IsCurrentKeyword(context, "DESC"))
             {
-                _helper.Consume();
+                context.Consume();
                 desc = true;
             }
-            else if (_helper.IsKeyword(_helper.Current, "ASC"))
+            else if (SQLParserHelper.IsCurrentKeyword(context, "ASC"))
             {
-                _helper.Consume();
+                context.Consume();
             }
 
             orderBy.Add(new OrderByExpression
             {
-                Span = CreateSpan(expr.Span.Start, lastToken.StartPosition, lastToken.Length),
+                Span = SQLParserHelper.CreateSpan(expr.Span.Start, lastToken.StartPosition, lastToken.Length),
                 Expression = expr,
                 Descending = desc
             });
 
 
-            while (!_helper.IsAtEnd && _helper.Expect(_helper.Current, SQLTokenType.Comma))
+            while (!context.IsAtEnd && SQLParserHelper.Expect(context.Current, SQLTokenType.Comma))
             {
-                _helper.Consume(); // Consume ','
+                context.Consume(); // Consume ','
 
-                expr = _expressionParser.Parse(_helper);
+                expr = SQLExpressionParser.Parse(ref context);
                 desc = false;
-                lastToken = _helper.Current;
+                lastToken = context.Current;
 
-                if (_helper.IsKeyword(_helper.Current, "DESC"))
+                if (SQLParserHelper.IsCurrentKeyword(context, "DESC"))
                 {
-                    _helper.Consume();
+                    context.Consume();
                     desc = true;
                 }
-                else if (_helper.IsKeyword(_helper.Current, "ASC"))
+                else if (SQLParserHelper.IsCurrentKeyword(context, "ASC"))
                 {
-                    _helper.Consume();
+                    context.Consume();
                 }
 
                 orderBy.Add(new OrderByExpression
                 {
-                    Span = CreateSpan(expr.Span.Start, lastToken.StartPosition, lastToken.Length),
+                    Span = SQLParserHelper.CreateSpan(expr.Span.Start, lastToken.StartPosition, lastToken.Length),
                     Expression = expr,
                     Descending = desc
                 });
             }
 
-            if (!_helper.Expect(_helper.Current, SQLTokenType.EOF))
+            if (!SQLParserHelper.Expect(context.Current, SQLTokenType.EOF))
             {
                 var err = ErrorFormatter.Create(
-                    _helper.Input,
-                    _helper.Current.StartPosition,
-                    $"Unexpected token '{_helper.GetSlice(_helper.Current)}' after end of expression.",
-                    errorTextLength: _helper.Current.Length);
+                    context.Span.ToString(),
+                    context.Current.StartPosition,
+                    $"Unexpected token '{context.GetSlice(context.Current)}' after end of expression.",
+                    errorTextLength: context.Current.Length);
 
                 throw new SyntaxErrorException(err);
             }
 
             return orderBy;
-        }
-        private SQLSourceSpan CreateSpan(int startPosition, int endStartPosition, int endLength)
-        {
-            int endPosition = endStartPosition + endLength;
-            return new SQLSourceSpan
-            {
-                Start = startPosition,
-                Length = endPosition - startPosition
-            };
         }
     }
 }

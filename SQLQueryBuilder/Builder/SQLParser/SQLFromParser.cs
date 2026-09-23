@@ -1,71 +1,60 @@
-﻿using SQLQueryBuilder.Helper;
+﻿using SQLQueryBuilder.Builder.SQLParser;
+using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
+using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum;
 using System.Data;
 
-internal class SQLFromParser
+internal static class SQLFromParser
 {
-    private SQLParserHelper _helper;
-
-    public List<SQLIdentifier> Parse(SQLParserContext context)
+    public static List<SQLIdentifier> Parse(ref SQLParserContext context)
     {
-        _helper = new SQLParserHelper(context);
-
         var parts = new List<SQLIdentifier>();
 
-        // First identifier
-        if (!_helper.Expects(_helper.Current, SQLDictionary.Identifiers))
+        var columns = SQLExpressionParser.Parse(ref context);
+
+        if (columns is not ColumnExpression column)
         {
             var err = ErrorFormatter.Create(
-                _helper.Input,
-                _helper.Current.StartPosition,
-                $"Expected Table Name",
-                errorTextLength: _helper.Current.Length);
+                context.Span.ToString(),
+                0,
+                $"{context.Span} is not a valid table reference.",
+                errorTextLength: context.Span.Length);
             throw new SyntaxErrorException(err);
         }
-        var token = _helper.Consume();
-        var name = _helper.GetSlice(token);
-        var stringName = SQLParserHelper.UnescapeIdentifier(name);
-        var delimiter = SQLParserHelper.GetIdentifierDelimiter(token);
-        parts.Add(new SQLIdentifier { Value = stringName, Delimiter = delimiter});
 
-
-        // dbo.Table style
-        while (_helper.Expect(_helper.Current, SQLTokenType.Dot))
+        if (column.Table == null)
         {
-            _helper.Consume(); // consume .
-
-            if (!_helper.Expects(_helper.Current, SQLDictionary.Identifiers))
+            if (column.Column == null)
             {
                 var err = ErrorFormatter.Create(
-                    _helper.Input,
-                    _helper.Current.StartPosition,
-                    $"Expected Identifier after '.'",
-                    errorTextLength: _helper.Current.Length);
+                    context.Span.ToString(),
+                    0,
+                    $"Table reference cannot be empty.",
+                    errorTextLength: context.Span.Length);
                 throw new SyntaxErrorException(err);
             }
-
-            token = _helper.Consume();
-            name = _helper.GetSlice(token);
-            stringName = SQLParserHelper.UnescapeIdentifier(name);
-            delimiter = SQLParserHelper.GetIdentifierDelimiter(token);
-            parts.Add(new SQLIdentifier { Value = stringName, Delimiter = delimiter });
-
-            if (parts.Count > 4)
-            {
-                throw new SyntaxErrorException(
-                    $"Invalid table name '{_helper.Input}'. Maximum format is server.database.schema.table.");
-            }
+        }
+        else
+        {
+            parts.AddRange(column.Table);
         }
 
-        if (!_helper.Expect(_helper.Current, SQLTokenType.EOF))
+        parts.Add(column.Column);
+
+        if (parts.Count > 4) // 4 part only
+        {
+            throw new SyntaxErrorException($"Invalid table name '{context.Span.ToString()}'. Maximum format is server.database.schema.table.");
+        }
+
+        if (!SQLParserHelper.Expect(context.Current, SQLTokenType.EOF))
         {
             var err = ErrorFormatter.Create(
-                _helper.Input,
-                _helper.Current.StartPosition,
-                $"Unexpected token '{_helper.GetSlice(_helper.Consume())}' after table name. Aliases must be provided separately.",
-                errorTextLength: _helper.Current.Length);
+                context.Span.ToString(),
+                context.Current.StartPosition,
+                $"Unexpected token '{context.GetSlice(context.Consume())}' after table name. Aliases must be provided separately.",
+                errorTextLength: context.Current.Length);
             throw new SyntaxErrorException(err);
         }
 

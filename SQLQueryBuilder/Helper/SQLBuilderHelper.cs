@@ -9,59 +9,58 @@ using System.Data;
 
 namespace SQLQueryBuilder.Helper
 {
-    public class SQLBuilderHelper
+    public static class SQLBuilderHelper
     {
-        private SQLExpressionParser _expressionParser = new SQLExpressionParser();
-        private SQLSelectParser _selectParser = new SQLSelectParser();
-        private SQLPredicateParser _predicateParser = new SQLPredicateParser();
-        private SQLGroupByParser _groupByParser = new SQLGroupByParser();
-        private SQLOrderByParser _orderByParser = new SQLOrderByParser();
-        private SQLFromParser _fromParser = new SQLFromParser();
-        private SQLGenerator _generator = new SQLGenerator();
-
-        public SQLParserContext BuildTokens(string input)
+        public static SQLParserContext BuildTokens(string input)
         {
             return SQLTokenizer.Tokenize(input);
         }
 
-        public SQLExpression BuildExpression(string input, bool validateEnd = true)
+        public static SQLExpression BuildExpression(string input, bool validateEnd = true)
         {
-            return _expressionParser.Parse(BuildTokens(input), validateEnd);
+            var context = BuildTokens(input);
+            return SQLExpressionParser.Parse(ref context, validateEnd);
         }
 
-        public List<SelectExpression> BuildSelect(string input)
+        public static List<SelectExpression> BuildSelect(string input)
         {
-            return _selectParser.Parse(BuildTokens(input));
+            var context = BuildTokens(input);
+            return SQLSelectParser.Parse(ref context);
         }
 
-        public SQLExpression BuildPredicate(string input)
+        public static SQLExpression BuildPredicate(string input)
         {
-            return _predicateParser.Parse(BuildTokens(input));
+            var context = BuildTokens(input);
+            return SQLPredicateParser.Parse(ref context);
         }
 
-        public List<SQLExpression> BuildGroupBy(string input)
+        public static List<SQLExpression> BuildGroupBy(string input)
         {
-            return _groupByParser.Parse(BuildTokens(input));
+            var context = BuildTokens(input);
+            return SQLGroupByParser.Parse(ref context);
         }
 
-        public List<OrderByExpression> BuildOrderBy(string input)
+        public static List<OrderByExpression> BuildOrderBy(string input)
         {
-            return _orderByParser.Parse(BuildTokens(input));
+            var context = BuildTokens(input);
+            return SQLOrderByParser.Parse(ref context);
         }
 
-        public List<SQLIdentifier> BuildFrom(string input)
+        public static List<SQLIdentifier> BuildFrom(string input)
         {
-            return _fromParser.Parse(BuildTokens(input));
+            var context = BuildTokens(input);
+            return SQLFromParser.Parse(ref context);
         }
 
-        public SQLQueryResult BuildSQL(SQLQuery query)
+        public static SQLQueryResult BuildSQL(SQLQuery query)
         {
-            _generator.BuildBaseQuery(query);
-            _generator.BuildClauses(query);
-            return _generator.Build();
+            var generator = new SQLGenerator();
+            generator.BuildBaseQuery(query);
+            generator.BuildClauses(query);
+            return generator.Build();
         }
 
-        public SQLIdentifier BuildAlias(string alias)
+        public static SQLIdentifier BuildAlias(string alias)
         {
             if (string.IsNullOrWhiteSpace(alias))
                 throw new ArgumentNullException("Alias cannot be null!");
@@ -104,6 +103,6 @@ namespace SQLQueryBuilder.Helper
             return aliasIden;
         }
 
-        public IASTTraverser ASTWalkerBuiler(IASTVisitor walker) => new ASTWalker(walker);
+        public static IASTTraverser ASTWalkerBuiler(IASTVisitor walker) => new ASTWalker(walker);
     }
 }

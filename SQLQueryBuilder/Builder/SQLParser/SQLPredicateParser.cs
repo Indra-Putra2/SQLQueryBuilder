@@ -6,34 +6,30 @@ using System.Data;
 
 namespace SQLQueryBuilder.Builder.SQLParser
 {
-    internal class SQLPredicateParser
+    internal static class SQLPredicateParser
     {
-        private SQLParserHelper _helper;
-        private SQLExpressionParser _expressionParser = new SQLExpressionParser();
-        public SQLExpression Parse(SQLParserContext context)
+        public static SQLExpression Parse(ref SQLParserContext context)
         {
-            _helper = new SQLParserHelper(context);
-
-            var expr = _expressionParser.Parse(_helper);
+            var expr = SQLExpressionParser.Parse(ref context);
 
             if (!IsPredicate(expr))
             {
                 var err = ErrorFormatter.Create(
-                _helper.Input,
+                context.Span.ToString(),
                 0,
                 "Expression must be a predicate.",
-                errorTextLength: _helper.Input.Length);
+                errorTextLength: context.Span.ToString().Length);
 
                 throw new SyntaxErrorException(err);
             }
 
-            if (!_helper.Expect(_helper.Current, SQLTokenType.EOF))
+            if (!SQLParserHelper.Expect(context.Current, SQLTokenType.EOF))
             {
                 var err = ErrorFormatter.Create(
-                    _helper.Input,
-                    _helper.Current.StartPosition,
+                    context.Span.ToString(),
+                    context.Current.StartPosition,
                     "Unexpected token after expression.",
-                    errorTextLength: _helper.Input.Length - _helper.Current.StartPosition);
+                    errorTextLength: context.Span.ToString().Length - context.Current.StartPosition);
 
                 throw new SyntaxErrorException(err);
             }

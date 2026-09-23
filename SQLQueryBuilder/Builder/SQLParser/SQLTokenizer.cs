@@ -178,9 +178,9 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 }
             }
 
-            context.Tokens.Add(new SQLToken(SQLTokenType.EOF, context.Span.Length, 0));
+            context.AddToken(new SQLToken(SQLTokenType.EOF, context.Span.Length, 0));
 
-            return new SQLParserContext(sqlQuery, context.Tokens);
+            return new SQLParserContext(context.Span, context.Tokens);
         }
 
         #region Helper Parsing Methods
@@ -637,7 +637,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
         private static void AddToken(SQLTokenType type, int start, ref SQLTokenizerContext context)
         {
-            context.Tokens.Add(new SQLToken(
+            context.AddToken(new SQLToken(
                 type,
                 start,
                 context.Index - start));

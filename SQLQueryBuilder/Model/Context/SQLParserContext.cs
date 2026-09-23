@@ -1,18 +1,47 @@
-﻿namespace SQLQueryBuilder.Model.Context
+﻿using SQLQueryBuilder.SQLEnum;
+
+namespace SQLQueryBuilder.Model.Context
 {
-    public class SQLParserContext
+    public ref struct SQLParserContext
     {
-        public string OriginalText { get; }
+        public int Index { get; private set; }
+        public ReadOnlySpan<char> Span { get; }
         public IReadOnlyList<SQLToken> Tokens { get; }
 
-        public SQLParserContext(string originalText, List<SQLToken> tokens)
+        #if DEBUG
+            public string DebugCurrentText =>
+                Current.Type == SQLTokenType.EOF
+                    ? "<EOF>"
+                    : GetSlice(Current).ToString();
+        #endif
+
+        public SQLParserContext(ReadOnlySpan<char> originalText, IReadOnlyList<SQLToken> tokens)
         {
-            OriginalText = originalText;
+            Span = originalText;
             Tokens = tokens;
+            Index = 0;
         }
 
+        public SQLToken Current => (uint)Index < (uint)Span.Length ? Tokens[Index] : Tokens[^1];
+        public SQLToken Consume() => Index < Span.Length ? Tokens[Index++] : Tokens[^1];
+        public bool IsAtEnd => Index >= Tokens.Count;
+        public SQLToken Peek(int offset = 1)
+        {
+            var index = Index + offset;
+
+            var token = (uint)index < (uint)Tokens.Count
+                ? Tokens[index]
+                : Tokens[^1];
+
+#if DEBUG
+            System.Diagnostics.Debug.WriteLine(
+                $"{token.Type} [{GetSlice(token).ToString()}]");
+#endif
+
+            return token;
+        }
         // Helper method leveraging ReadOnlySpan!
         public ReadOnlySpan<char> GetSlice(SQLToken token)
-            => OriginalText.AsSpan(token.StartPosition, token.Length);
+            => Span.Slice(token.StartPosition, token.Length);
     }
 }
