@@ -1,8 +1,10 @@
 ﻿using Dapper;
 using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model;
+using SQLQueryBuilder.Model.QueryBuilder;
 using SQLQueryBuilder.Model.SQL_Expression;
-using SQLQueryBuilder.SQLEnum;
+using SQLQueryBuilder.SQLEnum.QueryBuilder;
+using SQLQueryBuilder.SQLEnum.SQLExpression;
 using System.Text;
 
 namespace SQLQueryBuilder.Builder

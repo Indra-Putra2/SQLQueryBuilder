@@ -3,7 +3,7 @@ using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.SQL_Expression;
-using SQLQueryBuilder.SQLEnum;
+using SQLQueryBuilder.SQLEnum.Tokenizer;
 using System.Data;
 
 internal static class SQLFromParser

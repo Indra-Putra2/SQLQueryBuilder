@@ -1,7 +1,8 @@
-﻿using System.Data;
+﻿using SQLQueryBuilder.Model.SQL_Expression;
+using System.Data;
 using System.Reflection;
 
-namespace SQLQueryBuilder.Model.SQL_Expression
+namespace SQLQueryBuilder.Model.QueryBuilder
 {
     internal class SQLDTOManager
     {
@@ -16,7 +17,6 @@ namespace SQLQueryBuilder.Model.SQL_Expression
                 _properties[property.Name] = property;
             }
         }
-
         public void RegisterOutput(string name)
         {
             if (!_properties.TryGetValue(name, out var property))
@@ -27,7 +27,6 @@ namespace SQLQueryBuilder.Model.SQL_Expression
                 throw new SyntaxErrorException(
                     $"Duplicate output column name '{name}' is not allowed.");
         }
-
         public void RegisterOutput(string alias, SQLExpressionMetadata metadata)
         {
             if (!_properties.TryGetValue(alias, out var property))

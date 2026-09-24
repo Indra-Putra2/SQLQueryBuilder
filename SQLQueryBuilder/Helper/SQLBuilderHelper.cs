@@ -3,8 +3,10 @@ using SQLQueryBuilder.Builder.SQLParser;
 using SQLQueryBuilder.Interface;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
+using SQLQueryBuilder.Model.QueryBuilder;
 using SQLQueryBuilder.Model.SQL_Expression;
-using SQLQueryBuilder.SQLEnum;
+using SQLQueryBuilder.SQLEnum.SQLExpression;
+using SQLQueryBuilder.SQLEnum.Tokenizer;
 using System.Data;
 
 namespace SQLQueryBuilder.Helper
@@ -104,5 +106,26 @@ namespace SQLQueryBuilder.Helper
         }
 
         public static IASTTraverser ASTWalkerBuiler(IASTVisitor walker) => new ASTWalker(walker);
+
+        public static SQLExpressionMetadata DebugAnalyzeExpression<TargetDTO>(SQLExpression expression, IEnumerable<(string tableAlias, Type type)> sources, string input)
+        {
+            var dtoManager = new SQLDTOManager();
+            dtoManager.RegisterDTO(typeof(TargetDTO));
+
+            var tableManager = new SQLTableManager();
+
+            foreach (var source in sources)
+            {
+                tableManager.RegisterTable(source.tableAlias, source.type);
+            }
+
+            var context = new SemanticValidatorContext
+            {
+                DtoManager = dtoManager,
+                TableManager = tableManager,
+                Span = input.AsSpan()
+            };
+            return SQLSemanticValidator.AnalyzeExpression(expression, context);
+        }
     }
 }

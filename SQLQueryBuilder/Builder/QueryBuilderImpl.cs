@@ -1,192 +1,226 @@
 ﻿using SQLQueryBuilder.Builder.SQLParser;
 using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Interface;
-using SQLQueryBuilder.Model;
+using SQLQueryBuilder.Model.Context;
+using SQLQueryBuilder.Model.QueryBuilder;
 using SQLQueryBuilder.Model.SQL_Expression;
-using SQLQueryBuilder.SQLEnum;
+using SQLQueryBuilder.SQLEnum.QueryBuilder;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Reflection;
+using System.Text;
 
 namespace SQLQueryBuilder.Builder
 {
     internal class QueryBuilderImpl<TBase> : IQueryFrom, IQuerySelect, IQuery, IQueryFilter
     {
+        //new
+        private SQLQueryNew _sQLQuery = null;
+        private StringBuilder _sb = null;
+        private SQLTableManager _tableManager = null;
+        private SQLDTOManager _dtoManager = null;
         private bool _baseValidated;
-        private SQLQuery _query;
-        private SQLSemanticValidator _validator;
+
+        //old
         private SQLGenerator _queryGenerator;
 
         internal QueryBuilderImpl()
         {
             _baseValidated = false;
             _queryGenerator = new SQLGenerator();
-            _validator = new SQLSemanticValidator();
-            _query = new SQLQuery
+
+            _sQLQuery = new SQLQueryNew
             {
                 OutputDTO = typeof(TBase)
             };
+
+            _tableManager = new SQLTableManager();
+            _dtoManager = new SQLDTOManager();
         }
         private QueryBuilderImpl(
-            SQLQuery query,
-            SQLSemanticValidator validator)
+            SQLQueryNew sQLQuery,
+            SQLTableManager tableManager,
+            SQLDTOManager dtoManager)
         {
-            _query = query;
-            _validator = validator;
+            _sQLQuery = sQLQuery;
+
             _queryGenerator = new SQLGenerator();
 
             _baseValidated = true;
+            _tableManager = tableManager;
+            _dtoManager = dtoManager;
         }
         public IQuerySelect From<T>(string tableAlias)
         {
-            var rawName = GetTableName<T>();
-            var name = SQLBuilderHelper.BuildFrom(rawName);
-
-            var table = new TableSource
-            {
-                Type = typeof(T),
-                TableName = name,
-                Alias = SQLBuilderHelper.BuildAlias(tableAlias)
-            };
-
-            _query.From = new SQLSource<TableSource>
-            {
-                OriginalText = rawName,
-                Value = table
-            };
-
+            _sQLQuery.From = (tableAlias, typeof(T));
             return this;
         }
-
         public IQuery Select(string colums)
         {
-            _query.Select = new SQLSource<List<SelectExpression>>
-            {
-                OriginalText = colums,
-                Value = SQLBuilderHelper.BuildSelect(colums)
-            };
+            _sQLQuery.Select = colums;
             return this;
         }
         public IQuery Join<T>(string tableAlias, string joinCondition, SQLJoinType joinType = SQLJoinType.INNER)
         {
-            var name = SQLBuilderHelper.BuildFrom(GetTableName<T>());
-
-            var table = new TableSource
+            var joinInfo = new JoinInfo
             {
+                TableAlias = tableAlias,
+                JoinCondition = joinCondition,
                 Type = typeof(T),
-                TableName = name,
-                Alias = SQLBuilderHelper.BuildAlias(tableAlias)
-            };
-
-            var join = new JoinSource
-            {
-                Table = table,
-                Condition = SQLBuilderHelper.BuildPredicate(joinCondition),
                 JoinType = joinType
             };
-
-            _query.Joins.Add(new SQLSource<JoinSource> { OriginalText = joinCondition, Value = join });
+            _sQLQuery.Joins.Add(joinInfo);
             return this;
         }
 
         public IQueryFilter Where(string? where)
         {
-            _query.Where = null;
-
-            if (!string.IsNullOrWhiteSpace(where))
-                _query.Where = new SQLSource<SQLExpression>
-                {
-                    OriginalText = where,
-                    Value = SQLBuilderHelper.BuildPredicate(where)
-                };
-
+            _sQLQuery.Where = where;
             return this;
         }
 
         public IQueryFilter GroupBy(string? groupBy)
         {
-            _query.GroupBy = null;
-
-            if (!string.IsNullOrWhiteSpace(groupBy))
-                _query.GroupBy = new SQLSource<List<SQLExpression>>
-                {
-                    OriginalText = groupBy,
-                    Value = SQLBuilderHelper.BuildGroupBy(groupBy)
-                };
-
+            _sQLQuery.GroupBy = groupBy;
             return this;
         }
 
         public IQueryFilter Having(string? having)
         {
-            _query.Having = null;
-
-            if (!string.IsNullOrWhiteSpace(having))
-                _query.Having = new SQLSource<SQLExpression>
-                {
-                    OriginalText = having,
-                    Value = SQLBuilderHelper.BuildPredicate(having)
-                };
-
+            _sQLQuery.Having = having;
             return this;
         }
 
         public IQueryFilter OrderBy(string? orderBy)
         {
-            _query.OrderBy = null;
-
-            if (!string.IsNullOrWhiteSpace(orderBy))
-
-                _query.OrderBy = new SQLSource<List<OrderByExpression>>
-                {
-                    OriginalText = orderBy,
-                    Value = SQLBuilderHelper.BuildOrderBy(orderBy)
-                };
-
+            _sQLQuery.OrderBy = orderBy;
             return this;
         }
 
         public IQueryFilter Limit(int? limit)
         {
-            _query.Limit = null;
-            if(limit != null && limit >= 0)
-                _query.Limit = limit;
+            _sQLQuery.Limit = limit;
             return this;
         }
 
         public IQueryFilter ValidateBaseQuery()
         {
-            _validator.ValidateBaseQuery(_query);
-            _queryGenerator.BuildBaseQuery(_query);
+            if (_baseValidated)
+                return this;
+
+            var context = new SemanticValidatorContext
+            {
+                DtoManager = _dtoManager,
+                TableManager = _tableManager,
+            };
+
+            // Registration
+            context.DtoManager.RegisterDTO(_sQLQuery.OutputDTO);
+
+            // From
+            var table = CreateTableSource(_sQLQuery.From.alias, _sQLQuery.From.type);
+            context.Span = table.rawName.AsSpan();
+            SQLSemanticValidator.ValidateFrom(table.source, context);
+
+            // Joins
+            foreach (var join in _sQLQuery.Joins)
+            {
+                table = CreateTableSource(join.TableAlias, join.Type);
+
+                var joinSource = new JoinSource
+                {
+                    Table = table.source,
+                    Condition = SQLBuilderHelper.BuildPredicate(join.JoinCondition),
+                    JoinType = join.JoinType
+                };
+                context.Span = join.JoinCondition.AsSpan();
+                SQLSemanticValidator.ValidateJoins(joinSource, context);
+            }
+
+            // Select
+            context.Span = _sQLQuery.Select.AsSpan();
+            SQLSemanticValidator.ValidateSelect(SQLBuilderHelper.BuildSelect(_sQLQuery.Select), context);
+
             _baseValidated = true;
             return this;
         }
 
-        public IQueryFilter CreateQuery()
+        public IQueryFilter Copy()
         {
             return new QueryBuilderImpl<TBase>(
-                _query.CreateBaseCopy(),
-                new SQLSemanticValidator());
+                _sQLQuery.ClearFilter(),
+                _tableManager,
+                _dtoManager);
         }
 
         public SQLQueryResult Build()
         {
             if (!_baseValidated)
             {
-                _validator.ValidateBaseQuery(_query);
-                _queryGenerator.BuildBaseQuery(_query);
-                _baseValidated = true;
+                ValidateBaseQuery();
             }
 
-            _validator.ValidateClauses(_query);
-            _queryGenerator.BuildClauses(_query);
+            var where = _sQLQuery.Where;
+            var having = _sQLQuery.Having;
+            var orderBy = _sQLQuery.OrderBy;
+            var groupBy = _sQLQuery.GroupBy;
 
-            return _queryGenerator.Build();
+            if (where != null || having != null || orderBy != null || groupBy != null)
+            {
+                var context = new SemanticValidatorContext
+                {
+                    DtoManager = _dtoManager,
+                    TableManager = _tableManager,
+                };
+
+                if (where != null)
+                {
+                    context.Span = where.AsSpan();
+                    SQLSemanticValidator.ValidateWhere(SQLBuilderHelper.BuildExpression(where), context);
+                }
+
+                List<SQLExpression>? groupByExpr = null;
+                if (groupBy != null)
+                {
+                    context.Span = groupBy.AsSpan();
+                    groupByExpr = SQLBuilderHelper.BuildGroupBy(groupBy);
+                    SQLSemanticValidator.ValidateGroupBy(groupByExpr, context);
+                }
+
+                if (having != null)
+                {
+                    if (groupByExpr == null)
+                    {
+                        throw new InvalidOperationException("A HAVING clause cannot be used without a GROUP BY clause.");
+                    }
+                    context.Span = having.AsSpan();
+                    var havingExpr = SQLBuilderHelper.BuildExpression(having);
+                    SQLSemanticValidator.ValidateHaving(havingExpr, groupByExpr, context);
+                }
+
+                if (orderBy != null)
+                {
+                    context.Span = orderBy.AsSpan();
+                    SQLSemanticValidator.ValidateOrderBy(SQLBuilderHelper.BuildOrderBy(orderBy), context);
+                }
+            }
+
+            return null;
         }
 
-        private string GetTableName<T>()
+        private string GetTableName(Type type) => type.GetCustomAttribute<TableAttribute>()?.Name ?? type.Name;
+        private (TableSource source, string rawName) CreateTableSource(string alias, Type type)
         {
-            var type = typeof(T);
-            return type.GetCustomAttribute<TableAttribute>()?.Name ?? type.Name;
+            var rawName = GetTableName(type);
+            var name = SQLBuilderHelper.BuildFrom(rawName);
+
+            var source = new TableSource
+            {
+                Type = type,
+                TableName = name,
+                Alias = SQLBuilderHelper.BuildAlias(alias)
+            };
+
+            return (source, rawName);
         }
     }
 }

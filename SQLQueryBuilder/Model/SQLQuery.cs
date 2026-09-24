@@ -4,11 +4,24 @@ namespace SQLQueryBuilder.Model
 {
     public sealed record SQLQuery
     {
-        public Type? OutputDTO { get; set; } = null;
-
-        public SQLSource<TableSource>? From { get; set; } = null;
-        public SQLSource<List<SelectExpression>>? Select { get; set; } = null;
+        public Type OutputDTO
+        {
+            get;
+            set
+            {
+                OutputDTO = value ?? throw new ArgumentNullException(nameof(value));
+            }
+        }
+        public SQLSource<TableSource> From
+        {
+            get;
+            set
+            {
+                From = value ?? throw new ArgumentNullException(nameof(value));
+            }
+        }
         public List<SQLSource<JoinSource>> Joins { get; set; } = new();
+        public SQLSource<List<SelectExpression>>? Select { get; set; } = null;
 
         public SQLSource<SQLExpression>? Having { get; set; } = null;
         public SQLSource<SQLExpression>? Where { get; set; } = null;

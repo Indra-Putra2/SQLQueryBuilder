@@ -1,6 +1,6 @@
 ﻿using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.SQL_Expression;
-using SQLQueryBuilder.SQLEnum;
+using SQLQueryBuilder.SQLEnum.QueryBuilder;
 
 public abstract class SQLTableSource
 {

@@ -2,7 +2,8 @@
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.SQL_Expression;
-using SQLQueryBuilder.SQLEnum;
+using SQLQueryBuilder.SQLEnum.SQLExpression;
+using SQLQueryBuilder.SQLEnum.Tokenizer;
 using System.Data;
 using System.Globalization;
 

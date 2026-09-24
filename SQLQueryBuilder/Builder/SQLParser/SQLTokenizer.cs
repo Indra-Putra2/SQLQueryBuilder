@@ -1,7 +1,7 @@
 ﻿using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
-using SQLQueryBuilder.SQLEnum;
+using SQLQueryBuilder.SQLEnum.Tokenizer;
 using System.Globalization;
 
 namespace SQLQueryBuilder.Builder.SQLParser

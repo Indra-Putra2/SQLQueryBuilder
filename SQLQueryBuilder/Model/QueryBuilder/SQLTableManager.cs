@@ -1,15 +1,17 @@
 ﻿using SQLQueryBuilder.Helper;
+using SQLQueryBuilder.Model.SemanticValidator;
 using SQLQueryBuilder.Model.SQL_Expression;
 using System.Collections.ObjectModel;
 using System.Data;
 using System.Reflection;
 
-namespace SQLQueryBuilder.Model
+namespace SQLQueryBuilder.Model.QueryBuilder
 {
     internal class SQLTableManager
     {
         private NullabilityInfoContext _nullabilityContext = new NullabilityInfoContext();
         private Dictionary<string, Dictionary<string, SQLColumnMetadata>> _tables { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        private ReadOnlyDictionary<string, ReadOnlyDictionary<string, SQLColumnMetadata>> _readOnlyTables;
 
         public void RegisterTable(string tableAlias, Type type)
         {
@@ -25,6 +27,7 @@ namespace SQLQueryBuilder.Model
             }
 
             var columns = new Dictionary<string, SQLColumnMetadata>(StringComparer.OrdinalIgnoreCase);
+
             foreach (var prop in type.GetProperties())
             {
                 var name = prop.Name;
@@ -33,8 +36,8 @@ namespace SQLQueryBuilder.Model
 
                 columns[name] = new SQLColumnMetadata { IsNullable = nullable, ExpressionType = expressionType };
             }
-
             _tables[tableAlias] = columns;
+            _readOnlyTables = GetAllTables();
         }
         public SQLColumnMetadata GetColumnMetadata(string originalText, ColumnExpression column)
         {
@@ -109,7 +112,6 @@ namespace SQLQueryBuilder.Model
 
             return new ReadOnlyDictionary<string, ReadOnlyDictionary<string, SQLColumnMetadata>>(readOnlyCopy);
         }
-
         private bool IsNullable(PropertyInfo prop)
         {
             var nullability = _nullabilityContext.Create(prop);

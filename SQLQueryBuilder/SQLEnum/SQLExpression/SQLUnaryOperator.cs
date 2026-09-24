@@ -1,4 +1,4 @@
-﻿namespace SQLQueryBuilder.SQLEnum
+﻿namespace SQLQueryBuilder.SQLEnum.SQLExpression
 {
     public enum SQLUnaryOperator
     {

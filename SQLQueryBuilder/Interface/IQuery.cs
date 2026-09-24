@@ -1,5 +1,5 @@
-﻿using SQLQueryBuilder.Model;
-using SQLQueryBuilder.SQLEnum;
+﻿using SQLQueryBuilder.Model.QueryBuilder;
+using SQLQueryBuilder.SQLEnum.QueryBuilder;
 
 namespace SQLQueryBuilder.Interface
 {
@@ -26,7 +26,7 @@ namespace SQLQueryBuilder.Interface
 
     public interface IQueryFilter
     {
-        IQueryFilter CreateQuery();
+        IQueryFilter Copy();
         IQueryFilter OrderBy(string? order);
         IQueryFilter GroupBy(string? groupBy);
         IQueryFilter Having(string? having);

@@ -1,6 +1,6 @@
 ﻿using Dapper;
 
-namespace SQLQueryBuilder.Model
+namespace SQLQueryBuilder.Model.QueryBuilder
 {
     public class SQLQueryResult
     {

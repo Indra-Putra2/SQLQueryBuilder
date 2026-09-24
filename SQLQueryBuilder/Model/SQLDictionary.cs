@@ -1,4 +1,6 @@
-﻿using SQLQueryBuilder.SQLEnum;
+﻿using SQLQueryBuilder.SQLEnum.SemanticValidator;
+using SQLQueryBuilder.SQLEnum.SQLExpression;
+using SQLQueryBuilder.SQLEnum.Tokenizer;
 using System.Collections.Frozen;
 
 namespace SQLQueryBuilder.Model

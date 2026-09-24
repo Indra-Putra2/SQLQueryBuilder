@@ -1,4 +1,4 @@
-﻿using SQLQueryBuilder.SQLEnum;
+﻿using SQLQueryBuilder.SQLEnum.Tokenizer;
 
 namespace SQLQueryBuilder.Model.Context
 {
