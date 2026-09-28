@@ -2,7 +2,7 @@
 
 namespace SQLQueryBuilder.Model.Context
 {
-    internal ref struct SemanticValidatorContext
+    internal ref struct SQLValidatorContext
     {
         public readonly SQLTableManager TableManager { get; init; }
         public readonly SQLDTOManager DtoManager { get; init; }

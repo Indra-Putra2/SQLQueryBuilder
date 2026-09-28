@@ -12,7 +12,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
     internal static class SQLSemanticValidator
     {
         #region Validation
-        public static void ValidateFrom(TableSource from, SemanticValidatorContext context)
+        public static void ValidateFrom(TableSource from, ref SQLValidatorContext context)
         {
             if (from == null)
                 throw new NullReferenceException("FROM table name cannot be null.");
@@ -22,9 +22,9 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             context.TableManager.RegisterTable(from.Alias.Value, from.Type);
         }
-        public static void ValidateJoins(JoinSource join, SemanticValidatorContext context)
+        public static void ValidateJoins(JoinSource join, ref SQLValidatorContext context)
         {
-            if (join.Table == null)
+            if (join == null)
                 throw new NullReferenceException("JOIN table cannot be null.");
 
             var table = join.Table;
@@ -33,79 +33,85 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 throw new InvalidOperationException($"Join table name cannot be empty for {table.Type.Name}.");
 
             context.TableManager.RegisterTable(join.Table.Alias.Value, join.Table.Type);
-            AnalyzeExpression(join.Condition, context);
+            AnalyzeExpression(join.Condition, ref context);
         }
-        public static void ValidateSelect(List<SelectExpression> select, SemanticValidatorContext context)
+        public static void ValidateSelect(List<SelectExpression> select, ref SQLValidatorContext context)
         {
             if (select == null) throw new NullReferenceException("Select cannot be null.");
             if (select.Count == 0) throw new InvalidOperationException("Select cannot be empty.");
             foreach (var selected in select)
             {
-                AnalyzeExpression(selected, context);
+                AnalyzeExpression(selected, ref context);
             }
         }
-        public static void ValidateWhere(SQLExpression where, SemanticValidatorContext context)
+        public static void ValidateWhere(SQLExpression where, ref SQLValidatorContext context)
         {
             if (where == null) return;
-            AnalyzeExpression(where, context);
+            var metadata = AnalyzeExpression(where, ref context);
+
+            if (metadata.Type != SQLExpressionType.Boolean)
+                throw new SyntaxErrorException("WHERE clause must result in a boolean!");
         }
-        public static void ValidateHaving(SQLExpression having, List<SQLExpression> groupBy, SemanticValidatorContext context)
+        public static void ValidateHaving(SQLExpression having, List<SQLExpression>? groupBy, ref SQLValidatorContext context)
         {
             if (having == null) return;
 
             if (groupBy == null || groupBy.Count == 0)
             {
-                throw new InvalidOperationException(
+                throw new SyntaxErrorException(
                     "A HAVING clause cannot be used without a GROUP BY clause.");
             }
-            AnalyzeExpression(having, context);
+            var metadata = AnalyzeExpression(having, ref context);
+
+            if (metadata.Type != SQLExpressionType.Boolean)
+                throw new SyntaxErrorException("HAVING clause must result in a boolean!");
         }
-        public static void ValidateGroupBy(List<SQLExpression> groupBy, SemanticValidatorContext context)
+        public static void ValidateGroupBy(List<SQLExpression> groupBy, ref SQLValidatorContext context)
         {
             if (groupBy == null || groupBy.Count == 0)
                 return;
 
             foreach (var group in groupBy)
             {
-                AnalyzeExpression(group, context);
+                AnalyzeExpression(group, ref context);
             }
         }
-        public static void ValidateOrderBy(List<OrderByExpression> orderBy, SemanticValidatorContext context)
+        public static void ValidateOrderBy(List<OrderByExpression> orderBy, ref SQLValidatorContext context)
         {
             if (orderBy == null || orderBy.Count == 0)
                 return;
 
             foreach (var order in orderBy)
             {
-                AnalyzeExpression(order, context);
+                AnalyzeExpression(order, ref context);
             }
         }
 
         #endregion
 
         #region Analyzer
-        public static SQLExpressionMetadata AnalyzeExpression(SQLExpression expression, SemanticValidatorContext context)
+        public static SQLExpressionMetadata AnalyzeExpression(SQLExpression expression, ref SQLValidatorContext context)
         {
             return expression switch
             {
-                SelectExpression select => AnalyzeSelect(select, context),
-                OrderByExpression orderBy => AnalyzeExpression(orderBy.Expression, context),
-                ParenthesizedExpression parenthesized => AnalyzeExpression(parenthesized.Expression, context),
+                SelectExpression select => AnalyzeSelect(select, ref context),
+                OrderByExpression orderBy => AnalyzeExpression(orderBy.Expression, ref context),
+                ParenthesizedExpression parenthesized => AnalyzeExpression(parenthesized.Expression, ref context),
 
-                BinaryExpression binary => AnalyzeBinary(binary, context),
-                UnaryExpression unary => AnalyzeUnary(unary, context),
+                BinaryExpression binary => AnalyzeBinary(binary, ref context),
+                UnaryExpression unary => AnalyzeUnary(unary, ref context),
 
-                LikeExpression like => AnalyzeLike(like, context),
-                InExpression @in => AnalyzeIn(@in, context),
-                BetweenExpression between => AnalyzeBetween(between, context),
-                IsNullExpression isnull => AnalyzeIsNull(isnull, context),
+                LikeExpression like => AnalyzeLike(like, ref context),
+                InExpression @in => AnalyzeIn(@in, ref context),
+                BetweenExpression between => AnalyzeBetween(between, ref context),
+                IsNullExpression isnull => AnalyzeIsNull(isnull, ref context),
 
                 //Primary
-                WildcardExpression wildcard => AnalyzeWildcard(wildcard, context),
-                FunctionExpression function => AnalyzeFunction(function, context),
-                ColumnExpression column => AnalyzeColumn(column, context),
-                LiteralExpression literal => AnalyzeLiteral(literal, context),
-                CaseExpression @case => AnalyzeCase(@case, context),
+                WildcardExpression wildcard => AnalyzeWildcard(wildcard, ref context),
+                FunctionExpression function => AnalyzeFunction(function, ref context),
+                ColumnExpression column => AnalyzeColumn(column, ref context),
+                LiteralExpression literal => AnalyzeLiteral(literal, ref context),
+                CaseExpression @case => AnalyzeCase(@case, ref context),
 
                 _ => throw new NotSupportedException(
                     ErrorFormatter.Create(
@@ -115,9 +121,9 @@ namespace SQLQueryBuilder.Builder.SQLParser
                         expression.Span.Length))
             };
         }
-        private static SQLExpressionMetadata AnalyzeSelect(SelectExpression select, SemanticValidatorContext context)
+        private static SQLExpressionMetadata AnalyzeSelect(SelectExpression select, ref SQLValidatorContext context)
         {
-            var metadata = AnalyzeExpression(select.Expression, context);
+            var metadata = AnalyzeExpression(select.Expression, ref context);
 
             if (metadata.Type == SQLExpressionType.Unknown && !metadata.IsWildcard)
             {
@@ -129,11 +135,11 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
                 throw new SyntaxErrorException(err);
             }
-            RegisterSelectOutput(select, metadata, context);
+            RegisterSelectOutput(select, metadata, ref context);
 
             return metadata;
         }
-        private static SQLExpressionMetadata AnalyzeFunction(FunctionExpression function, SemanticValidatorContext context)
+        private static SQLExpressionMetadata AnalyzeFunction(FunctionExpression function, ref SQLValidatorContext context)
         {
             if (function.DeclaredType == SQLFunctionType.Null)
             {
@@ -157,7 +163,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             foreach (var arg in function.Arguments)
             {
-                var metadata = AnalyzeExpression(arg, context);
+                var metadata = AnalyzeExpression(arg, ref context);
             }
 
             return new SQLExpressionMetadata
@@ -167,9 +173,9 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 IsConstant = function.IsConstant,
             };
         }
-        private static SQLExpressionMetadata AnalyzeUnary(UnaryExpression unary, SemanticValidatorContext context)
+        private static SQLExpressionMetadata AnalyzeUnary(UnaryExpression unary, ref SQLValidatorContext context)
         {
-            var operand = AnalyzeExpression(unary.Operand, context);
+            var operand = AnalyzeExpression(unary.Operand, ref context);
 
             if (operand.Type == SQLExpressionType.NullLiteral)
             {
@@ -210,9 +216,9 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     throw new SyntaxErrorException(err);
             }
         }
-        private static SQLExpressionMetadata AnalyzeIsNull(IsNullExpression isn, SemanticValidatorContext context)
+        private static SQLExpressionMetadata AnalyzeIsNull(IsNullExpression isn, ref SQLValidatorContext context)
         {
-            var operandMeta = AnalyzeExpression(isn.Operand, context);
+            var operandMeta = AnalyzeExpression(isn.Operand, ref context);
 
             if (operandMeta.Type == SQLExpressionType.Unknown)
             {
@@ -227,11 +233,11 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 IsConstant = operandMeta.IsConstant
             };
         }
-        private static SQLExpressionMetadata AnalyzeBetween(BetweenExpression b, SemanticValidatorContext context)
+        private static SQLExpressionMetadata AnalyzeBetween(BetweenExpression b, ref SQLValidatorContext context)
         {
-            var targetMeta = AnalyzeExpression(b.Operand, context);
-            var lowMeta = AnalyzeExpression(b.Lower, context);
-            var highMeta = AnalyzeExpression(b.Upper, context);
+            var targetMeta = AnalyzeExpression(b.Operand, ref context);
+            var lowMeta = AnalyzeExpression(b.Lower, ref context);
+            var highMeta = AnalyzeExpression(b.Upper, ref context);
 
             if (targetMeta.Type == SQLExpressionType.Unknown ||
                 lowMeta.Type == SQLExpressionType.Unknown ||
@@ -289,9 +295,9 @@ namespace SQLQueryBuilder.Builder.SQLParser
                              highMeta.IsConstant
             };
         }
-        private static SQLExpressionMetadata AnalyzeIn(InExpression @in, SemanticValidatorContext context)
+        private static SQLExpressionMetadata AnalyzeIn(InExpression @in, ref SQLValidatorContext context)
         {
-            var targetMeta = AnalyzeExpression(@in.Operand, context);
+            var targetMeta = AnalyzeExpression(@in.Operand, ref context);
 
             if (targetMeta.Type == SQLExpressionType.Unknown)
             {
@@ -310,7 +316,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             // 2. Loop through the IN item list
             foreach (var itemExpr in @in.Values)
             {
-                var itemMeta = AnalyzeExpression(itemExpr, context);
+                var itemMeta = AnalyzeExpression(itemExpr, ref context);
                 if (itemMeta.Type == SQLExpressionType.Unknown)
                 {
                     var err = ErrorFormatter.Create(context.Span.ToString(), itemExpr.Span.Start, "Cannot determine value type for IN value.", itemExpr.Span.Length);
@@ -351,10 +357,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 IsConstant = targetMeta.IsConstant && itemsAreConstant
             };
         }
-        private static SQLExpressionMetadata AnalyzeLike(LikeExpression like, SemanticValidatorContext context)
+        private static SQLExpressionMetadata AnalyzeLike(LikeExpression like, ref SQLValidatorContext context)
         {
-            var operand = AnalyzeExpression(like.Operand, context);
-            var pattern = AnalyzeExpression(like.Pattern, context);
+            var operand = AnalyzeExpression(like.Operand, ref context);
+            var pattern = AnalyzeExpression(like.Pattern, ref context);
 
             if (operand.Type == SQLExpressionType.Unknown || pattern.Type == SQLExpressionType.Unknown)
             {
@@ -381,14 +387,14 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 IsConstant = operand.IsConstant && pattern.IsConstant
             };
         }
-        private static SQLExpressionMetadata AnalyzeCase(CaseExpression caseExpr, SemanticValidatorContext context)
+        private static SQLExpressionMetadata AnalyzeCase(CaseExpression caseExpr, ref SQLValidatorContext context)
         {
             SQLExpressionMetadata? baseMeta = null;
             SQLExpressionType? baseType = null;
 
             if (caseExpr.BaseExpression != null)
             {
-                baseMeta = AnalyzeExpression(caseExpr.BaseExpression, context);
+                baseMeta = AnalyzeExpression(caseExpr.BaseExpression, ref context);
 
                 if (baseMeta.Type == SQLExpressionType.Unknown)
                 {
@@ -411,8 +417,8 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             foreach (var caseWhen in caseExpr.Conditions)
             {
-                var whenMeta = AnalyzeExpression(caseWhen.Condition, context);
-                var thenMeta = AnalyzeExpression(caseWhen.Result, context);
+                var whenMeta = AnalyzeExpression(caseWhen.Condition, ref context);
+                var thenMeta = AnalyzeExpression(caseWhen.Result, ref context);
 
                 if (whenMeta.Type == SQLExpressionType.Unknown)
                 {
@@ -494,7 +500,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             // ELSE, if present, participates in exactly the same result-type logic.
             if (caseExpr.ElseExpression != null)
             {
-                var elseMeta = AnalyzeExpression(caseExpr.ElseExpression, context);
+                var elseMeta = AnalyzeExpression(caseExpr.ElseExpression, ref context);
 
                 if (elseMeta.Type == SQLExpressionType.Unknown)
                 {
@@ -546,18 +552,18 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 IsConstant = combinedConstant
             };
         }
-        private static SQLExpressionMetadata AnalyzeBinary(BinaryExpression binary, SemanticValidatorContext context)
+        private static SQLExpressionMetadata AnalyzeBinary(BinaryExpression binary, ref SQLValidatorContext context)
         {
             var op = binary.Operator;
 
             if (IsArithmeticOperator(op))
-                return AnalyzeArithmetic(binary, context);
+                return AnalyzeArithmetic(binary, ref context);
             else if (IsComparisonOperator(op))
-                return AnalyzeComparison(binary, context);
+                return AnalyzeComparison(binary, ref context);
             else if (IsLogicalOperator(op))
-                return AnalyzeLogical(binary, context);
+                return AnalyzeLogical(binary, ref context);
             else if (IsBitwiseOperator(op))
-                return AnalyzeBitwise(binary, context);
+                return AnalyzeBitwise(binary, ref context);
 
             throw new UnreachableException($"Unhandled binary operator: {op}");
 
@@ -592,10 +598,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                        op == SQLBinaryOperator.BitwiseRightShift;
             }
         }
-        private static SQLExpressionMetadata AnalyzeBitwise(BinaryExpression binary, SemanticValidatorContext context)
+        private static SQLExpressionMetadata AnalyzeBitwise(BinaryExpression binary, ref SQLValidatorContext context)
         {
-            var left = AnalyzeExpression(binary.Left, context);
-            var right = AnalyzeExpression(binary.Right, context);
+            var left = AnalyzeExpression(binary.Left, ref context);
+            var right = AnalyzeExpression(binary.Right, ref context);
             var op = binary.Operator;
 
             bool combinedNullable = left.IsNullable || right.IsNullable;
@@ -650,10 +656,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 }
             }
         }
-        private static SQLExpressionMetadata AnalyzeLogical(BinaryExpression binary, SemanticValidatorContext context)
+        private static SQLExpressionMetadata AnalyzeLogical(BinaryExpression binary, ref SQLValidatorContext context)
         {
-            var left = AnalyzeExpression(binary.Left, context);
-            var right = AnalyzeExpression(binary.Right, context);
+            var left = AnalyzeExpression(binary.Left, ref context);
+            var right = AnalyzeExpression(binary.Right, ref context);
             var op = binary.Operator;
 
             bool combinedNullable = left.IsNullable || right.IsNullable;
@@ -696,10 +702,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 IsConstant = combinedConstant
             };
         }
-        private static SQLExpressionMetadata AnalyzeComparison(BinaryExpression binary, SemanticValidatorContext context)
+        private static SQLExpressionMetadata AnalyzeComparison(BinaryExpression binary, ref SQLValidatorContext context)
         {
-            var left = AnalyzeExpression(binary.Left, context);
-            var right = AnalyzeExpression(binary.Right, context);
+            var left = AnalyzeExpression(binary.Left, ref context);
+            var right = AnalyzeExpression(binary.Right, ref context);
             var op = binary.Operator;
 
             bool combinedNullable = left.IsNullable || right.IsNullable;
@@ -737,10 +743,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 IsConstant = combinedConstant
             };
         }
-        private static SQLExpressionMetadata AnalyzeArithmetic(BinaryExpression binary, SemanticValidatorContext context)
+        private static SQLExpressionMetadata AnalyzeArithmetic(BinaryExpression binary, ref SQLValidatorContext context)
         {
-            var left = AnalyzeExpression(binary.Left, context);
-            var right = AnalyzeExpression(binary.Right, context);
+            var left = AnalyzeExpression(binary.Left, ref context);
+            var right = AnalyzeExpression(binary.Right, ref context);
             var op = binary.Operator;
 
             string err;
@@ -830,7 +836,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 return SQLExpressionType.Integer;
             }
         }
-        private static SQLExpressionMetadata AnalyzeLiteral(LiteralExpression literal, SemanticValidatorContext context)
+        private static SQLExpressionMetadata AnalyzeLiteral(LiteralExpression literal, ref SQLValidatorContext context)
         {
             if (literal.Type == SQLLiteralType.UnicodeString)
             {
@@ -950,7 +956,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             throw new SyntaxErrorException(err);
         }
-        private static SQLExpressionMetadata AnalyzeWildcard(WildcardExpression wildcard, SemanticValidatorContext context)
+        private static SQLExpressionMetadata AnalyzeWildcard(WildcardExpression wildcard, ref SQLValidatorContext context)
         {
             if (wildcard.TableAlias != null)
             {
@@ -975,7 +981,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 IsConstant = false
             };
         }
-        private static SQLExpressionMetadata AnalyzeColumn(ColumnExpression column, SemanticValidatorContext context)
+        private static SQLExpressionMetadata AnalyzeColumn(ColumnExpression column, ref SQLValidatorContext context)
         {
             if (column.Table == null)
             {
@@ -1010,7 +1016,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
             };
         }
         #endregion
-        private static void RegisterSelectOutput(SelectExpression select, SQLExpressionMetadata metadata, SemanticValidatorContext context)
+        private static void RegisterSelectOutput(SelectExpression select, SQLExpressionMetadata metadata, ref SQLValidatorContext context)
         {
             if (select.Alias != null)
             {

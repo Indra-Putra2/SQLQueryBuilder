@@ -1,4 +1,5 @@
-﻿using SQLQueryBuilder.Builder;
+﻿using Dapper;
+using SQLQueryBuilder.Builder;
 using SQLQueryBuilder.Builder.SQLParser;
 using SQLQueryBuilder.Interface;
 using SQLQueryBuilder.Model;
@@ -8,16 +9,19 @@ using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum.SQLExpression;
 using SQLQueryBuilder.SQLEnum.Tokenizer;
 using System.Data;
+using System.Text;
 
 namespace SQLQueryBuilder.Helper
 {
     public static class SQLBuilderHelper
     {
+        // Tokenizer
         public static SQLParserContext BuildTokens(string input)
         {
             return SQLTokenizer.Tokenize(input);
         }
 
+        // Parser
         public static SQLExpression BuildExpression(string input, bool validateEnd = true)
         {
             var context = BuildTokens(input);
@@ -56,10 +60,19 @@ namespace SQLQueryBuilder.Helper
 
         public static SQLQueryResult BuildSQL(SQLQuery query)
         {
-            var generator = new SQLGenerator();
-            generator.BuildBaseQuery(query);
-            generator.BuildClauses(query);
-            return generator.Build();
+            var context = new SQLGeneratorContext(new StringBuilder(), new DynamicParameters());
+            
+            SQLGenerator.BuildSelect(query.Select, ref context);
+            SQLGenerator.BuildFrom(query.From, ref context);
+            SQLGenerator.BuildJoins(query.Joins, ref context);
+
+            SQLGenerator.BuildHaving(query.Having, ref context);
+            SQLGenerator.BuildWhere(query.Where, ref context);
+            SQLGenerator.BuildGroupBy(query.GroupBy, ref context);
+            SQLGenerator.BuildOrderBy(query.OrderBy, ref context);
+            SQLGenerator.BuildLimit(query.Limit, ref context);
+
+            return SQLGenerator.Build(ref context);
         }
 
         public static SQLIdentifier BuildAlias(string alias)
@@ -106,26 +119,5 @@ namespace SQLQueryBuilder.Helper
         }
 
         public static IASTTraverser ASTWalkerBuiler(IASTVisitor walker) => new ASTWalker(walker);
-
-        public static SQLExpressionMetadata DebugAnalyzeExpression<TargetDTO>(SQLExpression expression, IEnumerable<(string tableAlias, Type type)> sources, string input)
-        {
-            var dtoManager = new SQLDTOManager();
-            dtoManager.RegisterDTO(typeof(TargetDTO));
-
-            var tableManager = new SQLTableManager();
-
-            foreach (var source in sources)
-            {
-                tableManager.RegisterTable(source.tableAlias, source.type);
-            }
-
-            var context = new SemanticValidatorContext
-            {
-                DtoManager = dtoManager,
-                TableManager = tableManager,
-                Span = input.AsSpan()
-            };
-            return SQLSemanticValidator.AnalyzeExpression(expression, context);
-        }
     }
 }

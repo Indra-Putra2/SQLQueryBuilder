@@ -1,4 +1,5 @@
-﻿using SQLQueryBuilder.Builder.SQLParser;
+﻿using Dapper;
+using SQLQueryBuilder.Builder.SQLParser;
 using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Interface;
 using SQLQueryBuilder.Model.Context;
@@ -15,18 +16,13 @@ namespace SQLQueryBuilder.Builder
     {
         //new
         private SQLQueryNew _sQLQuery = null;
-        private StringBuilder _sb = null;
+        private SQLGeneratorContext _GeneratorContext;
         private SQLTableManager _tableManager = null;
         private SQLDTOManager _dtoManager = null;
-        private bool _baseValidated;
-
-        //old
-        private SQLGenerator _queryGenerator;
 
         internal QueryBuilderImpl()
         {
-            _baseValidated = false;
-            _queryGenerator = new SQLGenerator();
+            _GeneratorContext = new SQLGeneratorContext(new StringBuilder(), new DynamicParameters());
 
             _sQLQuery = new SQLQueryNew
             {
@@ -39,15 +35,21 @@ namespace SQLQueryBuilder.Builder
         private QueryBuilderImpl(
             SQLQueryNew sQLQuery,
             SQLTableManager tableManager,
-            SQLDTOManager dtoManager)
+            SQLDTOManager dtoManager,
+            SQLGeneratorContext baseContext)
         {
-            _sQLQuery = sQLQuery;
-
-            _queryGenerator = new SQLGenerator();
-
-            _baseValidated = true;
             _tableManager = tableManager;
             _dtoManager = dtoManager;
+
+            // context Setup
+            _sQLQuery = sQLQuery.ClearFilter();
+
+            var sb = new StringBuilder().Append(baseContext.TemporaryString);
+            var param = new DynamicParameters();
+            param.AddDynamicParams(baseContext.TemporaryParameters);
+            var @base = baseContext.GetBase();
+
+            _GeneratorContext = new SQLGeneratorContext(sb, param, generatorBase: @base);
         }
         public IQuerySelect From<T>(string tableAlias)
         {
@@ -71,31 +73,26 @@ namespace SQLQueryBuilder.Builder
             _sQLQuery.Joins.Add(joinInfo);
             return this;
         }
-
         public IQueryFilter Where(string? where)
         {
             _sQLQuery.Where = where;
             return this;
         }
-
         public IQueryFilter GroupBy(string? groupBy)
         {
             _sQLQuery.GroupBy = groupBy;
             return this;
         }
-
         public IQueryFilter Having(string? having)
         {
             _sQLQuery.Having = having;
             return this;
         }
-
         public IQueryFilter OrderBy(string? orderBy)
         {
             _sQLQuery.OrderBy = orderBy;
             return this;
         }
-
         public IQueryFilter Limit(int? limit)
         {
             _sQLQuery.Limit = limit;
@@ -104,107 +101,137 @@ namespace SQLQueryBuilder.Builder
 
         public IQueryFilter ValidateBaseQuery()
         {
-            if (_baseValidated)
+            if (_GeneratorContext.BaseValidated)
                 return this;
 
-            var context = new SemanticValidatorContext
+            var validatorContext = new SQLValidatorContext
             {
                 DtoManager = _dtoManager,
                 TableManager = _tableManager,
             };
 
             // Registration
-            context.DtoManager.RegisterDTO(_sQLQuery.OutputDTO);
+            validatorContext.DtoManager.RegisterDTO(_sQLQuery.OutputDTO);
 
             // From
-            var table = CreateTableSource(_sQLQuery.From.alias, _sQLQuery.From.type);
-            context.Span = table.rawName.AsSpan();
-            SQLSemanticValidator.ValidateFrom(table.source, context);
+            var fromTable = CreateTableSource(_sQLQuery.From.alias, _sQLQuery.From.type);
+            validatorContext.Span = fromTable.rawName.AsSpan();
+            SQLSemanticValidator.ValidateFrom(fromTable.source, ref validatorContext);
 
             // Joins
-            foreach (var join in _sQLQuery.Joins)
+            List<JoinSource> joins = null;
+            if(_sQLQuery.Joins.Count > 0)
             {
-                table = CreateTableSource(join.TableAlias, join.Type);
-
-                var joinSource = new JoinSource
+                joins = new List<JoinSource>();
+                foreach (var join in _sQLQuery.Joins)
                 {
-                    Table = table.source,
-                    Condition = SQLBuilderHelper.BuildPredicate(join.JoinCondition),
-                    JoinType = join.JoinType
-                };
-                context.Span = join.JoinCondition.AsSpan();
-                SQLSemanticValidator.ValidateJoins(joinSource, context);
+                    var joinTable = CreateTableSource(join.TableAlias, join.Type);
+
+                    var joinSource = new JoinSource
+                    {
+                        Table = joinTable.source,
+                        Condition = SQLBuilderHelper.BuildPredicate(join.JoinCondition),
+                        JoinType = join.JoinType
+                    };
+
+                    joins.Add(joinSource);
+                    validatorContext.Span = join.JoinCondition.AsSpan();
+                    SQLSemanticValidator.ValidateJoins(joinSource, ref validatorContext);
+                }
             }
 
             // Select
-            context.Span = _sQLQuery.Select.AsSpan();
-            SQLSemanticValidator.ValidateSelect(SQLBuilderHelper.BuildSelect(_sQLQuery.Select), context);
+            var selects = SQLBuilderHelper.BuildSelect(_sQLQuery.Select);
+            validatorContext.Span = _sQLQuery.Select.AsSpan();
+            SQLSemanticValidator.ValidateSelect(selects, ref validatorContext);
 
-            _baseValidated = true;
+            // Generate base
+            SQLGenerator.BuildSelect(selects, ref _GeneratorContext);
+            SQLGenerator.BuildFrom(fromTable.source, ref _GeneratorContext);
+            if (joins != null)
+                SQLGenerator.BuildJoins(joins, ref _GeneratorContext);
+
+            _GeneratorContext.SetBase();
             return this;
         }
 
         public IQueryFilter Copy()
         {
             return new QueryBuilderImpl<TBase>(
-                _sQLQuery.ClearFilter(),
+                _sQLQuery,
                 _tableManager,
-                _dtoManager);
+                _dtoManager,
+                _GeneratorContext);
         }
 
         public SQLQueryResult Build()
         {
-            if (!_baseValidated)
+            if (!_GeneratorContext.BaseValidated)
             {
                 ValidateBaseQuery();
             }
+
+            _GeneratorContext.RefreshToBase();
 
             var where = _sQLQuery.Where;
             var having = _sQLQuery.Having;
             var orderBy = _sQLQuery.OrderBy;
             var groupBy = _sQLQuery.GroupBy;
 
-            if (where != null || having != null || orderBy != null || groupBy != null)
+            var whereNullOrEmpty = string.IsNullOrWhiteSpace(where);
+            var havingNullOrEmpty = string.IsNullOrWhiteSpace(having);
+            var orderByNullOrEmpty = string.IsNullOrWhiteSpace(orderBy);
+            var groupByNullOrEmpty = string.IsNullOrWhiteSpace(groupBy);
+
+            if (!whereNullOrEmpty || 
+                !havingNullOrEmpty || 
+                !orderByNullOrEmpty || 
+                !groupByNullOrEmpty)
             {
-                var context = new SemanticValidatorContext
+                var context = new SQLValidatorContext
                 {
                     DtoManager = _dtoManager,
                     TableManager = _tableManager,
                 };
 
-                if (where != null)
+                if (!whereNullOrEmpty)
                 {
                     context.Span = where.AsSpan();
-                    SQLSemanticValidator.ValidateWhere(SQLBuilderHelper.BuildExpression(where), context);
+                    var whereExpr = SQLBuilderHelper.BuildExpression(where);
+                    SQLSemanticValidator.ValidateWhere(whereExpr, ref context);
+                    SQLGenerator.BuildWhere(whereExpr, ref _GeneratorContext);
                 }
 
                 List<SQLExpression>? groupByExpr = null;
-                if (groupBy != null)
+                if (!groupByNullOrEmpty)
                 {
                     context.Span = groupBy.AsSpan();
                     groupByExpr = SQLBuilderHelper.BuildGroupBy(groupBy);
-                    SQLSemanticValidator.ValidateGroupBy(groupByExpr, context);
+
+                    SQLSemanticValidator.ValidateGroupBy(groupByExpr, ref context);
+                    SQLGenerator.BuildGroupBy(groupByExpr, ref _GeneratorContext);
                 }
 
-                if (having != null)
+                if (!havingNullOrEmpty)
                 {
-                    if (groupByExpr == null)
-                    {
-                        throw new InvalidOperationException("A HAVING clause cannot be used without a GROUP BY clause.");
-                    }
                     context.Span = having.AsSpan();
                     var havingExpr = SQLBuilderHelper.BuildExpression(having);
-                    SQLSemanticValidator.ValidateHaving(havingExpr, groupByExpr, context);
+                    SQLSemanticValidator.ValidateHaving(havingExpr, groupByExpr, ref context);
+                    SQLGenerator.BuildHaving(havingExpr, ref _GeneratorContext);
                 }
 
-                if (orderBy != null)
+                if (!orderByNullOrEmpty)
                 {
                     context.Span = orderBy.AsSpan();
-                    SQLSemanticValidator.ValidateOrderBy(SQLBuilderHelper.BuildOrderBy(orderBy), context);
+                    var orderByExpr = SQLBuilderHelper.BuildOrderBy(orderBy);
+                    SQLSemanticValidator.ValidateOrderBy(orderByExpr, ref context);
+                    SQLGenerator.BuildOrderBy(orderByExpr, ref _GeneratorContext);
                 }
             }
 
-            return null;
+            SQLGenerator.BuildLimit(_sQLQuery.Limit, ref _GeneratorContext);
+
+            return SQLGenerator.Build(ref _GeneratorContext);
         }
 
         private string GetTableName(Type type) => type.GetCustomAttribute<TableAttribute>()?.Name ?? type.Name;

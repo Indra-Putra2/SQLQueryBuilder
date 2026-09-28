@@ -1,6 +1,6 @@
 ﻿namespace SQLQueryBuilder.Model.QueryBuilder
 {
-    internal class SQLQueryNew
+    internal record SQLQueryNew
     {
         public required Type OutputDTO;
         public (string alias, Type type) From = (string.Empty, null);
@@ -15,13 +15,14 @@
 
         public SQLQueryNew ClearFilter()
         {
-            Having = null;
-            Where = null;
-            GroupBy = null;
-            OrderBy = null;
-            Limit = null;
-
-            return this;
+            return this with 
+            { 
+                Having = null,
+                Where = null,
+                GroupBy = null,
+                OrderBy = null,
+                Limit = null
+            };
         }
     }
 }
