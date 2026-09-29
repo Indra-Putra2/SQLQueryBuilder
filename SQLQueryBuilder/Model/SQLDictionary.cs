@@ -1,11 +1,11 @@
-﻿using SQLQueryBuilder.SQLEnum.SemanticValidator;
-using SQLQueryBuilder.SQLEnum.SQLExpression;
-using SQLQueryBuilder.SQLEnum.Tokenizer;
+﻿using SQLQueryBuilder.Core.SQLEnum.SemanticValidator;
+using SQLQueryBuilder.Core.SQLEnum.SQLExpression;
+using SQLQueryBuilder.Core.SQLEnum.Tokenizer;
 using System.Collections.Frozen;
 
 namespace SQLQueryBuilder.Model
 {
-    public static class SQLDictionary
+    internal static class SQLDictionary
     {
         // Definitions
         public static readonly string[] DateFormats =

@@ -1,7 +1,8 @@
-﻿using SQLQueryBuilder.Helper;
+﻿using SQLQueryBuilder.Core.SQLEnum.Tokenizer;
+using SQLQueryBuilder.Core.Tokenizer;
+using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
-using SQLQueryBuilder.SQLEnum.Tokenizer;
 using System.Globalization;
 
 namespace SQLQueryBuilder.Builder.SQLParser
@@ -82,8 +83,8 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     ParseIdentifierOrKeyword(ref context);
                 }
                 // Quoted Identifiers
-                else if (c == '[') ParseDelimitedIdentifier(']',ref context);
-                else if (c == '"') ParseDelimitedIdentifier('"',ref context);
+                else if (c == '[') ParseDelimitedIdentifier(']', ref context);
+                else if (c == '"') ParseDelimitedIdentifier('"', ref context);
                 // Standard Strings
                 else if (c == '\'') ParseString(ref context);
                 // Single-Character Operators & Punctuation
@@ -225,27 +226,27 @@ namespace SQLQueryBuilder.Builder.SQLParser
             // Initiate Year context
             var dateContext = new SQLTokenizerDateTimeContext(context.Index, 4, "Year", "YYYY-MM-DD");
 
-            dateContext.Year = ParseDatePart(ref context,ref dateContext);
-            ExpectHyphen(ref context,ref dateContext);
+            dateContext.Year = ParseDatePart(ref context, ref dateContext);
+            ExpectHyphen(ref context, ref dateContext);
 
             // Change to Month Context
             dateContext.Start = context.Index;
             dateContext.ExpectedDigit = 2;
             dateContext.Name = "Month";
 
-            dateContext.Month = ParseDatePart(ref context,ref dateContext);
-            ExpectHyphen(ref context,ref dateContext);
+            dateContext.Month = ParseDatePart(ref context, ref dateContext);
+            ExpectHyphen(ref context, ref dateContext);
 
             // Change to Day Context
             dateContext.Start = context.Index;
             dateContext.Name = "Day";
 
-            dateContext.Day = ParseDatePart(ref context,ref dateContext);
+            dateContext.Day = ParseDatePart(ref context, ref dateContext);
 
             if (context.Current != '\'')
-                ThrowTemporalError("Unterminated date literal.", ref context,ref dateContext);
+                ThrowTemporalError("Unterminated date literal.", ref context, ref dateContext);
 
-            ValidateDate(ref context,ref dateContext);
+            ValidateDate(ref context, ref dateContext);
 
             context.Consume(); // '
 
@@ -257,26 +258,26 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             context.Consume(); // T/t
             context.Consume(); // '
-            
+
             // Initiate Hour context
             var dateContext = new SQLTokenizerDateTimeContext(context.Index, 2, "Hour", "HH:MM:SS[.fffffff]");
 
-            dateContext.Hour = ParseDatePart(ref context,ref dateContext);
-            ExpectColon(ref context,ref dateContext);
+            dateContext.Hour = ParseDatePart(ref context, ref dateContext);
+            ExpectColon(ref context, ref dateContext);
 
             // Change to Minute Context
             dateContext.Start = context.Index;
             dateContext.Name = "Minute";
 
-            dateContext.Minute = ParseDatePart(ref context,ref dateContext);
-            ExpectColon(ref context,ref dateContext);
+            dateContext.Minute = ParseDatePart(ref context, ref dateContext);
+            ExpectColon(ref context, ref dateContext);
 
-            dateContext.Second = ParseDateSeconds(ref context,ref dateContext);
+            dateContext.Second = ParseDateSeconds(ref context, ref dateContext);
 
             if (context.Current != '\'')
-                ThrowTemporalError("Invalid time literal.", ref context,ref dateContext);
+                ThrowTemporalError("Invalid time literal.", ref context, ref dateContext);
 
-            ValidateTime(ref context,ref dateContext);
+            ValidateTime(ref context, ref dateContext);
 
             context.Consume(); // '
 
@@ -289,29 +290,29 @@ namespace SQLQueryBuilder.Builder.SQLParser
             context.Consume(); // D/d
             context.Consume(); // T/t
             context.Consume(); // '
-            
+
             // Initiate Year context
             var dateContext = new SQLTokenizerDateTimeContext(context.Index, 4, "Year", "YYYY-MM-DD HH:MM:SS[.fffffff]");
 
-            dateContext.Year = ParseDatePart(ref context,ref dateContext);
-            ExpectHyphen(ref context,ref dateContext);
+            dateContext.Year = ParseDatePart(ref context, ref dateContext);
+            ExpectHyphen(ref context, ref dateContext);
 
             // Change to Month Context
             dateContext.Start = context.Index;
             dateContext.ExpectedDigit = 2;
             dateContext.Name = "Month";
 
-            dateContext.Month = ParseDatePart(ref context,ref dateContext);
-            ExpectHyphen(ref context,ref dateContext);
+            dateContext.Month = ParseDatePart(ref context, ref dateContext);
+            ExpectHyphen(ref context, ref dateContext);
 
             // Change to Day Context
             dateContext.Start = context.Index;
             dateContext.Name = "Day";
 
-            dateContext.Day = ParseDatePart(ref context,ref dateContext);
+            dateContext.Day = ParseDatePart(ref context, ref dateContext);
 
             if (context.Current != ' ')
-                ThrowTemporalError("Invalid datetime literal.",ref context,ref dateContext);
+                ThrowTemporalError("Invalid datetime literal.", ref context, ref dateContext);
 
             context.Consume();
 
@@ -319,27 +320,27 @@ namespace SQLQueryBuilder.Builder.SQLParser
             dateContext.Start = context.Index;
             dateContext.Name = "Hour";
 
-            dateContext.Hour = ParseDatePart(ref context,ref dateContext);
-            ExpectColon(ref context,ref dateContext);
+            dateContext.Hour = ParseDatePart(ref context, ref dateContext);
+            ExpectColon(ref context, ref dateContext);
 
             // Change to Minute Context
             dateContext.Start = context.Index;
             dateContext.Name = "Minutes";
 
-            dateContext.Minute = ParseDatePart(ref context,ref dateContext);
-            ExpectColon(ref context,ref dateContext);
+            dateContext.Minute = ParseDatePart(ref context, ref dateContext);
+            ExpectColon(ref context, ref dateContext);
 
             // Change to Second Context
             dateContext.Start = context.Index;
             dateContext.Name = "Second";
 
-            dateContext.Second = ParseDateSeconds(ref context,ref dateContext);
+            dateContext.Second = ParseDateSeconds(ref context, ref dateContext);
 
             if (context.Current != '\'')
-                ThrowTemporalError("Invalid datetime literal.", ref context,ref dateContext);
+                ThrowTemporalError("Invalid datetime literal.", ref context, ref dateContext);
 
-            ValidateDate(ref context,ref dateContext);
-            ValidateTime(ref context,ref dateContext);
+            ValidateDate(ref context, ref dateContext);
+            ValidateTime(ref context, ref dateContext);
 
             context.Consume(); // '
 
@@ -557,11 +558,11 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             AddToken(type, start, ref context);
         }
-        private static int ParseDatePart(ref SQLTokenizerContext context,ref SQLTokenizerDateTimeContext dateContext)
+        private static int ParseDatePart(ref SQLTokenizerContext context, ref SQLTokenizerDateTimeContext dateContext)
         {
             // 1. Ensure have enough characters left in the input to even read expectedDigits
             if (context.Index + dateContext.ExpectedDigit > context.Span.Length)
-                ThrowTemporalError($"Invalid {dateContext.Name}", ref context,ref dateContext);
+                ThrowTemporalError($"Invalid {dateContext.Name}", ref context, ref dateContext);
 
             // 2. Slice exact target window zero-allocation
             ReadOnlySpan<char> partSpan = context.Span.Slice(context.Index, dateContext.ExpectedDigit);
@@ -586,7 +587,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             return value;
         }
-        private static decimal ParseDateSeconds(ref SQLTokenizerContext context,ref SQLTokenizerDateTimeContext dateContext)
+        private static decimal ParseDateSeconds(ref SQLTokenizerContext context, ref SQLTokenizerDateTimeContext dateContext)
         {
             int partStart = context.Index;
 
@@ -601,7 +602,7 @@ namespace SQLQueryBuilder.Builder.SQLParser
 
             if (secondsSpan.IsEmpty)
             {
-                ThrowTemporalError("Invalid seconds.", ref context,ref dateContext);
+                ThrowTemporalError("Invalid seconds.", ref context, ref dateContext);
             }
 
             // 3. Fast structural validation on the span
@@ -611,21 +612,21 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 // Check for multiple decimal points
                 if (secondsSpan[(dotIndex + 1)..].Contains('.'))
                 {
-                    ThrowTemporalError("Multiple decimal points.", ref context,ref dateContext);
+                    ThrowTemporalError("Multiple decimal points.", ref context, ref dateContext);
                 }
 
                 // Check fractional digit count (max 7 digits)
                 int fractionalCount = secondsSpan.Length - (dotIndex + 1);
                 if (fractionalCount > 7)
                 {
-                    ThrowTemporalError("Seconds cannot have more than 7 fractional digits.", ref context,ref dateContext);
+                    ThrowTemporalError("Seconds cannot have more than 7 fractional digits.", ref context, ref dateContext);
                 }
             }
 
             // 4. Single-pass parse directly off the span
             if (!decimal.TryParse(secondsSpan, CultureInfo.InvariantCulture, out decimal value))
             {
-                ThrowTemporalError("Invalid seconds.", ref context,ref dateContext);
+                ThrowTemporalError("Invalid seconds.", ref context, ref dateContext);
             }
 
             return value;
@@ -642,52 +643,52 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 start,
                 context.Index - start));
         }
-        private static void ThrowTemporalError(string message, ref SQLTokenizerContext context,ref SQLTokenizerDateTimeContext dateContext)
+        private static void ThrowTemporalError(string message, ref SQLTokenizerContext context, ref SQLTokenizerDateTimeContext dateContext)
         {
             var err = ErrorFormatter.Create(
-                context.Span.ToString(), 
-                dateContext.Start, 
+                context.Span.ToString(),
+                dateContext.Start,
                 $"{message}. Expected format: {dateContext.Format}.");
             throw new FormatException(err);
         }
-        private static void ExpectHyphen(ref SQLTokenizerContext context,ref SQLTokenizerDateTimeContext dateContext)
+        private static void ExpectHyphen(ref SQLTokenizerContext context, ref SQLTokenizerDateTimeContext dateContext)
         {
             if (context.Current != '-')
-                ThrowTemporalError("Expected '-' in date.", ref context,ref dateContext);
+                ThrowTemporalError("Expected '-' in date.", ref context, ref dateContext);
 
             context.Consume();
         }
-        private static void ExpectColon(ref SQLTokenizerContext context,ref SQLTokenizerDateTimeContext dateContext)
+        private static void ExpectColon(ref SQLTokenizerContext context, ref SQLTokenizerDateTimeContext dateContext)
         {
             if (context.Current != ':')
-                ThrowTemporalError("Expected ':' in time.", ref context,ref dateContext);
+                ThrowTemporalError("Expected ':' in time.", ref context, ref dateContext);
 
             context.Consume();
         }
-        private static void ValidateTime(ref SQLTokenizerContext context,ref SQLTokenizerDateTimeContext dateContext)
+        private static void ValidateTime(ref SQLTokenizerContext context, ref SQLTokenizerDateTimeContext dateContext)
         {
             var format = dateContext.Format;
 
             if (dateContext.Hour is < 0 or > 23)
-                ThrowTemporalError($"Invalid hours {dateContext.Hour}.", ref context,ref dateContext);
+                ThrowTemporalError($"Invalid hours {dateContext.Hour}.", ref context, ref dateContext);
 
             if (dateContext.Minute is < 0 or > 59)
-                ThrowTemporalError($"Invalid minutes {dateContext.Minute}.", ref context,ref dateContext);
+                ThrowTemporalError($"Invalid minutes {dateContext.Minute}.", ref context, ref dateContext);
 
             if (dateContext.Second < 0 || dateContext.Second >= 60)
-                ThrowTemporalError($"Invalid seconds {dateContext.Second}.", ref context,ref dateContext);
+                ThrowTemporalError($"Invalid seconds {dateContext.Second}.", ref context, ref dateContext);
         }
-        private static void ValidateDate(ref SQLTokenizerContext context,ref SQLTokenizerDateTimeContext dateContext)
+        private static void ValidateDate(ref SQLTokenizerContext context, ref SQLTokenizerDateTimeContext dateContext)
         {
             var month = dateContext.Month;
             if (month is < 1 or > 12)
-                ThrowTemporalError($"Invalid month {month}.", ref context,ref dateContext);
+                ThrowTemporalError($"Invalid month {month}.", ref context, ref dateContext);
 
             int maxDay = SQLDictionary.DaysInMonth[month - 1];
 
             var day = dateContext.Day;
             if (day is < 1 || day > maxDay)
-                ThrowTemporalError($"Invalid day {day}.", ref context,ref dateContext);
+                ThrowTemporalError($"Invalid day {day}.", ref context, ref dateContext);
         }
         #endregion
     }

@@ -1,8 +1,8 @@
-﻿using SQLQueryBuilder.Model.SQL_Expression;
+﻿using SQLQueryBuilder.Core.SQLExpression;
 
 namespace SQLQueryBuilder.Interface
 {
-    public interface IASTVisitor
+    internal interface IASTVisitor
     {
         void OnBinary(BinaryExpression binary);
         void OnLiteral(LiteralExpression literal);

@@ -1,7 +1,7 @@
-﻿using SQLQueryBuilder.Helper;
+﻿using SQLQueryBuilder.Core.SQLEnum.Tokenizer;
+using SQLQueryBuilder.Core.SQLExpression;
+using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model.Context;
-using SQLQueryBuilder.Model.SQL_Expression;
-using SQLQueryBuilder.SQLEnum.Tokenizer;
 using System.Data;
 
 namespace SQLQueryBuilder.Builder.SQLParser

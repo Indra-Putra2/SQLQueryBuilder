@@ -1,5 +1,5 @@
-﻿using SQLQueryBuilder.Interface;
-using SQLQueryBuilder.Model.SQL_Expression;
+﻿using SQLQueryBuilder.Core.SQLExpression;
+using SQLQueryBuilder.Interface;
 
 namespace SQLQueryBuilder.Helper
 {
@@ -18,8 +18,8 @@ namespace SQLQueryBuilder.Helper
                 case BinaryExpression binary:
                     _walker.OnBinary(binary);
                     break;
-                case LiteralExpression literal: 
-                    _walker.OnLiteral(literal); 
+                case LiteralExpression literal:
+                    _walker.OnLiteral(literal);
                     break;
                 case ColumnExpression column:
                     _walker.OnColumn(column);

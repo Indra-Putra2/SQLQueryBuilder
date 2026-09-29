@@ -1,10 +1,10 @@
 ﻿using Dapper;
 using SQLQueryBuilder.Builder.SQLParser;
+using SQLQueryBuilder.Core.SQLExpression;
 using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Interface;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.QueryBuilder;
-using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum.QueryBuilder;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Reflection;
@@ -15,14 +15,16 @@ namespace SQLQueryBuilder.Builder
     internal class QueryBuilderImpl<TBase> : IQueryFrom, IQuerySelect, IQuery, IQueryFilter
     {
         //new
-        private SQLQueryNew _sQLQuery = null;
+        private SQLQueryNew _sQLQuery;
         private SQLGeneratorContext _GeneratorContext;
-        private SQLTableManager _tableManager = null;
-        private SQLDTOManager _dtoManager = null;
+        private SQLTableManager _tableManager;
+        private SQLDTOManager _dtoManager;
 
         internal QueryBuilderImpl()
         {
-            _GeneratorContext = new SQLGeneratorContext(new StringBuilder(), new DynamicParameters());
+            _GeneratorContext = new SQLGeneratorContext(
+                new StringBuilder(),
+                new DynamicParameters());
 
             _sQLQuery = new SQLQueryNew
             {
@@ -47,9 +49,12 @@ namespace SQLQueryBuilder.Builder
             var sb = new StringBuilder().Append(baseContext.TemporaryString);
             var param = new DynamicParameters();
             param.AddDynamicParams(baseContext.TemporaryParameters);
-            var @base = baseContext.GetBase();
 
-            _GeneratorContext = new SQLGeneratorContext(sb, param, generatorBase: @base);
+            _GeneratorContext = baseContext with
+            {
+                TemporaryString = sb,
+                TemporaryParameters = param,
+            };
         }
         public IQuerySelect From<T>(string tableAlias)
         {
@@ -119,8 +124,8 @@ namespace SQLQueryBuilder.Builder
             SQLSemanticValidator.ValidateFrom(fromTable.source, ref validatorContext);
 
             // Joins
-            List<JoinSource> joins = null;
-            if(_sQLQuery.Joins.Count > 0)
+            List<JoinSource>? joins = null;
+            if (_sQLQuery.Joins.Count > 0)
             {
                 joins = new List<JoinSource>();
                 foreach (var join in _sQLQuery.Joins)
@@ -183,9 +188,9 @@ namespace SQLQueryBuilder.Builder
             var orderByNullOrEmpty = string.IsNullOrWhiteSpace(orderBy);
             var groupByNullOrEmpty = string.IsNullOrWhiteSpace(groupBy);
 
-            if (!whereNullOrEmpty || 
-                !havingNullOrEmpty || 
-                !orderByNullOrEmpty || 
+            if (!whereNullOrEmpty ||
+                !havingNullOrEmpty ||
+                !orderByNullOrEmpty ||
                 !groupByNullOrEmpty)
             {
                 var context = new SQLValidatorContext

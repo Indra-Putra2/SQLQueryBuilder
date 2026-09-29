@@ -3,7 +3,7 @@ using System.Text;
 
 namespace SQLQueryBuilder.Model.Context
 {
-    internal struct SQLGeneratorContext
+    internal record SQLGeneratorContext
     {
         private SQLGeneratorBase? _base;
 
@@ -15,9 +15,9 @@ namespace SQLQueryBuilder.Model.Context
         public DynamicParameters TemporaryParameters;
 
         public SQLGeneratorContext(
-            StringBuilder stringBuilder, 
-            DynamicParameters parameters, 
-            int parameterIndex = 1, 
+            StringBuilder stringBuilder,
+            DynamicParameters parameters,
+            int parameterIndex = 1,
             int indent = 0,
             SQLGeneratorBase? generatorBase = null)
         {

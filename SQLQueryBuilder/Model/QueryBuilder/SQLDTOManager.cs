@@ -17,6 +17,7 @@ namespace SQLQueryBuilder.Model.QueryBuilder
                 _properties[property.Name] = property;
             }
         }
+        // Column Output Registration
         public void RegisterOutput(string name)
         {
             if (!_properties.TryGetValue(name, out var property))
@@ -27,6 +28,7 @@ namespace SQLQueryBuilder.Model.QueryBuilder
                 throw new SyntaxErrorException(
                     $"Duplicate output column name '{name}' is not allowed.");
         }
+        // Alias Output Registration
         public void RegisterOutput(string alias, SQLExpressionMetadata metadata)
         {
             if (!_properties.TryGetValue(alias, out var property))

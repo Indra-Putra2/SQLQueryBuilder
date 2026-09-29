@@ -1,4 +1,4 @@
-﻿namespace SQLQueryBuilder.Model.SQL_Expression
+﻿namespace SQLQueryBuilder.Core.SQLExpression
 {
     public readonly record struct SQLSourceSpan(
         int Start,

@@ -1,12 +1,11 @@
-﻿using SQLQueryBuilder.SQLEnum.SQLExpression;
+﻿using SQLQueryBuilder.Core.SQLEnum.SQLExpression;
 
-namespace SQLQueryBuilder.Model.SQL_Expression
+namespace SQLQueryBuilder.Core.SQLExpression
 {
     public abstract class SQLExpression
     {
         public required SQLSourceSpan Span { get; init; }
     }
-
     public sealed class ColumnExpression : SQLExpression
     {
         public List<SQLIdentifier>? Table { get; init; }

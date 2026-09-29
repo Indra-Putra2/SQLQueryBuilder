@@ -1,8 +1,8 @@
-﻿using SQLQueryBuilder.Model.SQL_Expression;
+﻿using SQLQueryBuilder.Core.SQLExpression;
 
 namespace SQLQueryBuilder.Model
 {
-    public sealed record SQLQuery
+    internal sealed record SQLQuery
     {
         public TableSource From { get; set; }
         public List<JoinSource> Joins { get; set; } = new();

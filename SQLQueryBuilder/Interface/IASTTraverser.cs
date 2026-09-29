@@ -1,8 +1,8 @@
-﻿using SQLQueryBuilder.Model.SQL_Expression;
+﻿using SQLQueryBuilder.Core.SQLExpression;
 
 namespace SQLQueryBuilder.Interface
 {
-    public interface IASTTraverser
+    internal interface IASTTraverser
     {
         void Walk(SQLExpression expression);
     }

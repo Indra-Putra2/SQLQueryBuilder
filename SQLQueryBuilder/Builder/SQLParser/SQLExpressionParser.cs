@@ -1,9 +1,10 @@
-﻿using SQLQueryBuilder.Helper;
+﻿using SQLQueryBuilder.Core.SQLEnum.SQLExpression;
+using SQLQueryBuilder.Core.SQLEnum.Tokenizer;
+using SQLQueryBuilder.Core.SQLExpression;
+using SQLQueryBuilder.Core.Tokenizer;
+using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
-using SQLQueryBuilder.Model.SQL_Expression;
-using SQLQueryBuilder.SQLEnum.SQLExpression;
-using SQLQueryBuilder.SQLEnum.Tokenizer;
 using System.Data;
 using System.Globalization;
 
@@ -249,9 +250,9 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 {
                     var token = context.Current;
                     var err = ErrorFormatter.Create(
-                        context.Span.ToString(), 
-                        context.Current.StartPosition, 
-                        $"Operator {context.GetSlice(token)} ({token.Type}) is not a valid comparison operator", 
+                        context.Span.ToString(),
+                        context.Current.StartPosition,
+                        $"Operator {context.GetSlice(token)} ({token.Type}) is not a valid comparison operator",
                         errorTextLength: token.Length);
                     throw new SyntaxErrorException(err);
                 }
@@ -725,9 +726,9 @@ namespace SQLQueryBuilder.Builder.SQLParser
             SQLToken lastToken = context.Consume(); // consume ')'
 
             bool typeIsNull = SQLParserHelper.Expect(context.Current, SQLTokenType.NullLiteral);
-            if (SQLParserHelper.IsCurrentKeyword(context, "TYPE") || 
-                SQLParserHelper.IsCurrentKeyword(context, "CONST") || 
-                SQLParserHelper.Expect(context.Current, SQLTokenType.SQLType) || 
+            if (SQLParserHelper.IsCurrentKeyword(context, "TYPE") ||
+                SQLParserHelper.IsCurrentKeyword(context, "CONST") ||
+                SQLParserHelper.Expect(context.Current, SQLTokenType.SQLType) ||
                 typeIsNull)
             {
                 // TYPE?

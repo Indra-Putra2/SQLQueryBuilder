@@ -1,8 +1,8 @@
-﻿using SQLQueryBuilder.Model;
+﻿using SQLQueryBuilder.Core.SQLEnum.SQLExpression;
+using SQLQueryBuilder.Core.SQLEnum.Tokenizer;
+using SQLQueryBuilder.Core.SQLExpression;
+using SQLQueryBuilder.Core.Tokenizer;
 using SQLQueryBuilder.Model.Context;
-using SQLQueryBuilder.Model.SQL_Expression;
-using SQLQueryBuilder.SQLEnum.SQLExpression;
-using SQLQueryBuilder.SQLEnum.Tokenizer;
 using System.Collections.Frozen;
 
 namespace SQLQueryBuilder.Helper

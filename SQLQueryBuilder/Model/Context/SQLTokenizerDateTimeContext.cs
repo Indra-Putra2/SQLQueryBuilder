@@ -1,6 +1,4 @@
-﻿using SQLQueryBuilder.Helper;
-
-namespace SQLQueryBuilder.Model.Context
+﻿namespace SQLQueryBuilder.Model.Context
 {
     internal ref struct SQLTokenizerDateTimeContext
     {

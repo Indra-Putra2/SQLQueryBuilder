@@ -14,7 +14,7 @@ namespace SQLQueryBuilder.Interface
     }
     public interface IQuery
     {
-        IQuery Join<T>(string? tableAlias, string? joinCondition, SQLJoinType joinType = SQLJoinType.INNER);
+        IQuery Join<T>(string tableAlias, string joinCondition, SQLJoinType joinType = SQLJoinType.INNER);
         IQueryFilter OrderBy(string? order);
         IQueryFilter GroupBy(string? groupBy);
         IQueryFilter Having(string? having);

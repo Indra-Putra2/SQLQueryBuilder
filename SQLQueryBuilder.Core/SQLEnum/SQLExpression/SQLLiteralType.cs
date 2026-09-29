@@ -1,4 +1,4 @@
-﻿namespace SQLQueryBuilder.SQLEnum.SQLExpression
+﻿namespace SQLQueryBuilder.Core.SQLEnum.SQLExpression
 {
     public enum SQLLiteralType
     {

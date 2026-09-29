@@ -1,8 +1,8 @@
-﻿using SQLQueryBuilder.SQLEnum.SemanticValidator;
+﻿using SQLQueryBuilder.Core.SQLEnum.SemanticValidator;
 
 namespace SQLQueryBuilder.Model.SQL_Expression
 {
-    public sealed record SQLExpressionMetadata
+    internal sealed record SQLExpressionMetadata
     {
         public Type? ClrType { get; init; }
         public SQLExpressionType Type { get; init; }

@@ -1,4 +1,4 @@
-﻿using SQLQueryBuilder.SQLEnum.SemanticValidator;
+﻿using SQLQueryBuilder.Core.SQLEnum.SemanticValidator;
 
 namespace SQLQueryBuilder.Model.SemanticValidator
 {

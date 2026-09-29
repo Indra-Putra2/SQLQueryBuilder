@@ -1,9 +1,10 @@
-﻿using SQLQueryBuilder.Helper;
+﻿using SQLQueryBuilder.Core.SQLEnum.SemanticValidator;
+using SQLQueryBuilder.Core.SQLEnum.SQLExpression;
+using SQLQueryBuilder.Core.SQLExpression;
+using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.SQL_Expression;
-using SQLQueryBuilder.SQLEnum.SemanticValidator;
-using SQLQueryBuilder.SQLEnum.SQLExpression;
 using System.Data;
 using System.Diagnostics;
 
@@ -86,7 +87,6 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 AnalyzeExpression(order, ref context);
             }
         }
-
         #endregion
 
         #region Analyzer
@@ -154,9 +154,9 @@ namespace SQLQueryBuilder.Builder.SQLParser
             if (function.DeclaredType == SQLFunctionType.Unknown)
             {
                 var err = ErrorFormatter.Create(
-                    context.Span.ToString(), 
-                    function.Span.Start, 
-                    $"Function '{function.Name}' must declare a return type. e.g.: 'FUNC() TYPE INT? CONST'", 
+                    context.Span.ToString(),
+                    function.Span.Start,
+                    $"Function '{function.Name}' must declare a return type. e.g.: 'FUNC() TYPE INT? CONST'",
                     function.Span.Length);
                 throw new SyntaxErrorException(err);
             }
@@ -1034,18 +1034,18 @@ namespace SQLQueryBuilder.Builder.SQLParser
             {
                 if (wildcard.TableAlias != null)
                 {
-                    var columns = context.TableManager.GetTableColumns(context.Span.ToString() ,wildcard);
+                    var columns = context.TableManager.GetTableColumns(context.Span.ToString(), wildcard);
 
                     foreach (var c in columns)
                         context.DtoManager.RegisterOutput(c.Key);
                 }
                 else
                 {
-                    var tables = context.TableManager.GetAllTables();
+                    var tables = context.TableManager.Tables;
 
                     foreach (var table in tables.Values)
                     {
-                        foreach (var c in table)
+                        foreach (var c in table.Columns)
                             context.DtoManager.RegisterOutput(c.Key);
                     }
                 }
@@ -1069,33 +1069,6 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 return true;
 
             return left == right;
-        }
-        private static SQLExpressionType UnifyTypes(SQLExpressionType left, SQLExpressionType right)
-        {
-            if (left == SQLExpressionType.NullLiteral)
-                return right;
-
-            if (right == SQLExpressionType.NullLiteral)
-                return left;
-
-            if (SQLDictionary.NumericTypes.Contains(left) &&
-                SQLDictionary.NumericTypes.Contains(right))
-            {
-                if (left == SQLExpressionType.Double ||
-                    right == SQLExpressionType.Double)
-                    return SQLExpressionType.Double;
-
-                if (left == SQLExpressionType.Decimal ||
-                    right == SQLExpressionType.Decimal)
-                    return SQLExpressionType.Decimal;
-
-                return SQLExpressionType.Integer;
-            }
-
-            if (left == right)
-                return left;
-
-            throw new InvalidOperationException();
         }
     }
 }

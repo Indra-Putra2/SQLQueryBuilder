@@ -1,19 +1,18 @@
 ﻿using Dapper;
 using SQLQueryBuilder.Builder;
 using SQLQueryBuilder.Builder.SQLParser;
+using SQLQueryBuilder.Core.SQLEnum.Tokenizer;
+using SQLQueryBuilder.Core.SQLExpression;
 using SQLQueryBuilder.Interface;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.QueryBuilder;
-using SQLQueryBuilder.Model.SQL_Expression;
-using SQLQueryBuilder.SQLEnum.SQLExpression;
-using SQLQueryBuilder.SQLEnum.Tokenizer;
 using System.Data;
 using System.Text;
 
 namespace SQLQueryBuilder.Helper
 {
-    public static class SQLBuilderHelper
+    internal static class SQLBuilderHelper
     {
         // Tokenizer
         public static SQLParserContext BuildTokens(string input)
@@ -58,27 +57,10 @@ namespace SQLQueryBuilder.Helper
             return SQLFromParser.Parse(ref context);
         }
 
-        public static SQLQueryResult BuildSQL(SQLQuery query)
-        {
-            var context = new SQLGeneratorContext(new StringBuilder(), new DynamicParameters());
-            
-            SQLGenerator.BuildSelect(query.Select, ref context);
-            SQLGenerator.BuildFrom(query.From, ref context);
-            SQLGenerator.BuildJoins(query.Joins, ref context);
-
-            SQLGenerator.BuildHaving(query.Having, ref context);
-            SQLGenerator.BuildWhere(query.Where, ref context);
-            SQLGenerator.BuildGroupBy(query.GroupBy, ref context);
-            SQLGenerator.BuildOrderBy(query.OrderBy, ref context);
-            SQLGenerator.BuildLimit(query.Limit, ref context);
-
-            return SQLGenerator.Build(ref context);
-        }
-
         public static SQLIdentifier BuildAlias(string alias)
         {
             if (string.IsNullOrWhiteSpace(alias))
-                throw new ArgumentNullException("Alias cannot be null!");
+                throw new ArgumentNullException("Table alias cannot be null or empty!");
 
             var context = BuildTokens(alias);
 
@@ -93,29 +75,16 @@ namespace SQLQueryBuilder.Helper
                     $"Aliases must be a single name, such as name, [name], or \"name\".");
             }
 
-            var token = context.Tokens[0];
-
-            SQLIdentifierDelimiter delimiter = SQLParserHelper.GetIdentifierDelimiter(token);
-            var name = SQLParserHelper.UnescapeIdentifier(context.GetSlice(context.Tokens[0]));
-
-            bool validAlias =
-                token.Type == SQLTokenType.Identifier ||
-                token.Type == SQLTokenType.BracketIdentifier ||
-                token.Type == SQLTokenType.DoubleQuoteIdentifier;
-
-            if (!validAlias || context.Tokens[1].Type != SQLTokenType.EOF)
+            var expr = BuildExpression(alias);
+            if (expr is not ColumnExpression column)
             {
                 throw new SyntaxErrorException(
                     $"'{alias}' is not a valid alias." +
                     $"\nAlias must be of type Identifier, Bracket identifier or Double quote identifier " +
                     $"\ne.g., name, [name], \"name\"");
             }
-            var aliasIden = new SQLIdentifier
-            {
-                Value = name,
-                Delimiter = delimiter
-            };
-            return aliasIden;
+
+            return column.Column;
         }
 
         public static IASTTraverser ASTWalkerBuiler(IASTVisitor walker) => new ASTWalker(walker);

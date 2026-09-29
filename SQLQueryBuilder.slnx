@@ -1,5 +1,6 @@
 <Solution>
-  <Project Path="../ASTBuilder/ASTBuilder.Core/ASTBuilder.Core.csproj" />
   <Project Path="../HardwareInventoryLibrary/HardwareInventoryLibrary/HardwareInventoryLibrary.csproj" />
+  <Project Path="SQLQueryBuilder.Core/SQLQueryBuilder.Core.csproj" Id="e550ba84-e914-4b56-8628-d7626fca0d22" />
+  <Project Path="SQLQueryBuilder.Test/SQLQueryBuilder.Test.csproj" Id="b54ea330-0485-42c0-87cf-363b9fb60193" />
   <Project Path="SQLQueryBuilder/SQLQueryBuilder.csproj" />
 </Solution>

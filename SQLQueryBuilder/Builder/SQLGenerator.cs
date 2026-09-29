@@ -1,10 +1,9 @@
-﻿using SQLQueryBuilder.Helper;
-using SQLQueryBuilder.Model;
+﻿using SQLQueryBuilder.Core.SQLEnum.SQLExpression;
+using SQLQueryBuilder.Core.SQLExpression;
+using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.QueryBuilder;
-using SQLQueryBuilder.Model.SQL_Expression;
 using SQLQueryBuilder.SQLEnum.QueryBuilder;
-using SQLQueryBuilder.SQLEnum.SQLExpression;
 
 namespace SQLQueryBuilder.Builder
 {
@@ -65,7 +64,7 @@ namespace SQLQueryBuilder.Builder
             if (joins == null) return;
             if (joins.Count == 0) return;
 
-            foreach(var join in joins)
+            foreach (var join in joins)
             {
                 string joinType = join.JoinType switch
                 {

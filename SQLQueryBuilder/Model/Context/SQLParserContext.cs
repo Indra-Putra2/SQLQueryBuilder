@@ -1,19 +1,20 @@
-﻿using SQLQueryBuilder.SQLEnum.Tokenizer;
+﻿using SQLQueryBuilder.Core.SQLEnum.Tokenizer;
+using SQLQueryBuilder.Core.Tokenizer;
 
 namespace SQLQueryBuilder.Model.Context
 {
-    public ref struct SQLParserContext
+    internal ref struct SQLParserContext
     {
         public int Index { get; private set; }
         public ReadOnlySpan<char> Span { get; }
         public IReadOnlyList<SQLToken> Tokens { get; }
 
-        #if DEBUG
-            public string DebugCurrentText =>
-                Current.Type == SQLTokenType.EOF
-                    ? "<EOF>"
-                    : GetSlice(Current).ToString();
-        #endif
+#if DEBUG
+        public string DebugCurrentText =>
+            Current.Type == SQLTokenType.EOF
+                ? "<EOF>"
+                : GetSlice(Current).ToString();
+#endif
 
         public SQLParserContext(ReadOnlySpan<char> originalText, IReadOnlyList<SQLToken> tokens)
         {

@@ -1,4 +1,4 @@
-﻿namespace SQLQueryBuilder.SQLEnum.Tokenizer
+﻿namespace SQLQueryBuilder.Core.SQLEnum.Tokenizer
 {
     public enum SQLTokenType
     {

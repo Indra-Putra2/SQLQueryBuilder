@@ -7,7 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Dapper" Version="2.1.72" />
+	<ProjectReference Include="..\SQLQueryBuilder.Core\SQLQueryBuilder.Core.csproj" />
+	<PackageReference Include="Dapper" Version="2.1.72" />
+	<InternalsVisibleTo Include="SQLQueryBuilder.Test" />
+	<InternalsVisibleTo Include="SQLBuilderShowcase" />
   </ItemGroup>
 
 </Project>

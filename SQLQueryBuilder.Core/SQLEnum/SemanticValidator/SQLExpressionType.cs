@@ -1,18 +1,18 @@
-﻿namespace SQLQueryBuilder.SQLEnum.SQLExpression
+﻿namespace SQLQueryBuilder.Core.SQLEnum.SemanticValidator
 {
-    public enum SQLFunctionType
+    public enum SQLExpressionType
     {
         Unknown,
-        Null,
+        NullLiteral,
         Boolean,
         Integer,
-        Double,
         Decimal,
+        Double,
         String,
         Date,
         Time,
         DateTime,
         Guid,
-        Binary,
+        Binary
     }
 }

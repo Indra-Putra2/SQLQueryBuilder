@@ -1,4 +1,6 @@
-﻿namespace SQLQueryBuilder.Model.Context
+﻿using SQLQueryBuilder.Core.Tokenizer;
+
+namespace SQLQueryBuilder.Model.Context
 {
     internal ref struct SQLTokenizerContext
     {

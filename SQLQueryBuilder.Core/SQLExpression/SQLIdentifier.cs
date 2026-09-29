@@ -1,6 +1,6 @@
-﻿using SQLQueryBuilder.SQLEnum.SQLExpression;
+﻿using SQLQueryBuilder.Core.SQLEnum.SQLExpression;
 
-namespace SQLQueryBuilder.Model
+namespace SQLQueryBuilder.Core.SQLExpression
 {
     public sealed class SQLIdentifier
     {

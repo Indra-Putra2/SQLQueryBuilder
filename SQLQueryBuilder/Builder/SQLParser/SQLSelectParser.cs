@@ -1,8 +1,9 @@
-﻿using SQLQueryBuilder.Helper;
+﻿using SQLQueryBuilder.Core.SQLEnum.Tokenizer;
+using SQLQueryBuilder.Core.SQLExpression;
+using SQLQueryBuilder.Core.Tokenizer;
+using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
-using SQLQueryBuilder.Model.SQL_Expression;
-using SQLQueryBuilder.SQLEnum.Tokenizer;
 using System.Data;
 
 namespace SQLQueryBuilder.Builder.SQLParser
@@ -28,10 +29,10 @@ namespace SQLQueryBuilder.Builder.SQLParser
             var lastStart = alias?.StartPosition ?? expr.Span.Start;
             var lastLength = alias?.Length ?? expr.Span.Length;
 
-            selected.Add(new SelectExpression 
-            { 
+            selected.Add(new SelectExpression
+            {
                 Span = SQLParserHelper.CreateSpan(expr.Span.Start, lastStart, lastLength),
-                Expression = expr, 
+                Expression = expr,
                 Alias = GetAliasName(alias, ref context)
             });
 

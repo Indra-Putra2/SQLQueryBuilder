@@ -3,7 +3,7 @@
     internal record SQLQueryNew
     {
         public required Type OutputDTO;
-        public (string alias, Type type) From = (string.Empty, null);
+        public (string alias, Type type) From;
         public List<JoinInfo> Joins = new();
         public string Select = string.Empty;
 
@@ -15,8 +15,8 @@
 
         public SQLQueryNew ClearFilter()
         {
-            return this with 
-            { 
+            return this with
+            {
                 Having = null,
                 Where = null,
                 GroupBy = null,

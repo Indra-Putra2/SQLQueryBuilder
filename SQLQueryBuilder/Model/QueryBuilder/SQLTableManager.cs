@@ -1,7 +1,6 @@
-﻿using SQLQueryBuilder.Helper;
+﻿using SQLQueryBuilder.Core.SQLExpression;
+using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model.SemanticValidator;
-using SQLQueryBuilder.Model.SQL_Expression;
-using System.Collections.ObjectModel;
 using System.Data;
 using System.Reflection;
 
@@ -10,8 +9,8 @@ namespace SQLQueryBuilder.Model.QueryBuilder
     internal class SQLTableManager
     {
         private NullabilityInfoContext _nullabilityContext = new NullabilityInfoContext();
-        private Dictionary<string, Dictionary<string, SQLColumnMetadata>> _tables { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-        private ReadOnlyDictionary<string, ReadOnlyDictionary<string, SQLColumnMetadata>> _readOnlyTables;
+        private Dictionary<string, SQLTableMetadata> _tables = new(StringComparer.OrdinalIgnoreCase);
+        public IReadOnlyDictionary<string, SQLTableMetadata> Tables => _tables;
 
         public void RegisterTable(string tableAlias, Type type)
         {
@@ -26,18 +25,17 @@ namespace SQLQueryBuilder.Model.QueryBuilder
                 throw new SyntaxErrorException($"Table alias '{tableAlias}' already exists!");
             }
 
-            var columns = new Dictionary<string, SQLColumnMetadata>(StringComparer.OrdinalIgnoreCase);
-
+            var table = new SQLTableMetadata();
             foreach (var prop in type.GetProperties())
             {
                 var name = prop.Name;
                 var nullable = IsNullable(prop);
                 var expressionType = SQLDictionary.GetExpressionType(prop.PropertyType);
-
-                columns[name] = new SQLColumnMetadata { IsNullable = nullable, ExpressionType = expressionType };
+                var metadata = new SQLColumnMetadata { IsNullable = nullable, ExpressionType = expressionType };
+                table.AddColumn(name, metadata);
             }
-            _tables[tableAlias] = columns;
-            _readOnlyTables = GetAllTables();
+            table.Freeze();
+            _tables[tableAlias] = table;
         }
         public SQLColumnMetadata GetColumnMetadata(string originalText, ColumnExpression column)
         {
@@ -52,7 +50,7 @@ namespace SQLQueryBuilder.Model.QueryBuilder
                 throw new SyntaxErrorException(err);
             }
 
-            if (!_tables.TryGetValue(column.Table[0].Value, out var columns))
+            if (!_tables.TryGetValue(column.Table[0].Value, out var tableMetadata))
             {
                 var err = ErrorFormatter.Create(
                     originalText,
@@ -64,7 +62,7 @@ namespace SQLQueryBuilder.Model.QueryBuilder
             }
 
 
-            if (!columns.TryGetValue(column.Column.Value, out var metadata))
+            if (!tableMetadata.Columns.TryGetValue(column.Column.Value, out var metadata))
             {
                 var err = ErrorFormatter.Create(
                     originalText,
@@ -77,7 +75,7 @@ namespace SQLQueryBuilder.Model.QueryBuilder
 
             return metadata;
         }
-        public ReadOnlyDictionary<string, SQLColumnMetadata> GetTableColumns(string originalText, WildcardExpression wildcard)
+        public IReadOnlyDictionary<string, SQLColumnMetadata> GetTableColumns(string originalText, WildcardExpression wildcard)
         {
             if (wildcard.TableAlias == null)
             {
@@ -90,7 +88,7 @@ namespace SQLQueryBuilder.Model.QueryBuilder
                 throw new SyntaxErrorException(err);
             }
 
-            if (!_tables.TryGetValue(wildcard.TableAlias[0].Value, out var columns))
+            if (!_tables.TryGetValue(wildcard.TableAlias[0].Value, out var tableMetadata))
             {
                 var err = ErrorFormatter.Create(
                     originalText,
@@ -101,16 +99,7 @@ namespace SQLQueryBuilder.Model.QueryBuilder
                 throw new SyntaxErrorException(err);
             }
 
-            return new ReadOnlyDictionary<string, SQLColumnMetadata>(columns);
-        }
-        public ReadOnlyDictionary<string, ReadOnlyDictionary<string, SQLColumnMetadata>> GetAllTables()
-        {
-            var readOnlyCopy = _tables.ToDictionary(
-                kvp => kvp.Key,
-                kvp => new ReadOnlyDictionary<string, SQLColumnMetadata>(kvp.Value)
-            );
-
-            return new ReadOnlyDictionary<string, ReadOnlyDictionary<string, SQLColumnMetadata>>(readOnlyCopy);
+            return tableMetadata.Columns;
         }
         private bool IsNullable(PropertyInfo prop)
         {
