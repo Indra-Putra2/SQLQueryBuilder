@@ -34,6 +34,7 @@ namespace SQLQueryBuilder.Model.QueryBuilder
                 var metadata = new SQLColumnMetadata { IsNullable = nullable, ExpressionType = expressionType };
                 table.AddColumn(name, metadata);
             }
+
             table.Freeze();
             _tables[tableAlias] = table;
         }

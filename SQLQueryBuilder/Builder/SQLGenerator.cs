@@ -294,8 +294,9 @@ namespace SQLQueryBuilder.Builder
             {
                 foreach (var iden in expression.Table)
                     AppendColumn(iden, ref context);
+                context.TemporaryString.Append(".");
             }
-            context.TemporaryString.Append(".");
+            
             AppendColumn(expression.Column, ref context);
 
         }

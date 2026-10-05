@@ -6,7 +6,7 @@ namespace SQLQueryBuilder.Model.QueryBuilder
     {
         public required string TableAlias = string.Empty;
         public required string JoinCondition = string.Empty;
-        public required Type Type = null;
+        public required Type TableType = null;
         public SQLJoinType JoinType = SQLJoinType.INNER;
     }
 }

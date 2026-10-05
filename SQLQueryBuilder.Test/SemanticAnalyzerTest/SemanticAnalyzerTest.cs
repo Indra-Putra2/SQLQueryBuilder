@@ -234,7 +234,6 @@ namespace SQLQueryBuilder.Test.SemanticAnalyzerTest
             Assert.Equal(expectedConstant, metadata.IsConstant);
         }
         #endregion
-
         #region Unary
         [Theory]
         // 1. Standard Numeric & Boolean Literals / Columns (Strict & Lenient)

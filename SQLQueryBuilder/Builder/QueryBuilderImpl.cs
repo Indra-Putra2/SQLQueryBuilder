@@ -6,8 +6,6 @@ using SQLQueryBuilder.Interface;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.QueryBuilder;
 using SQLQueryBuilder.SQLEnum.QueryBuilder;
-using System.ComponentModel.DataAnnotations.Schema;
-using System.Reflection;
 using System.Text;
 
 namespace SQLQueryBuilder.Builder
@@ -72,7 +70,7 @@ namespace SQLQueryBuilder.Builder
             {
                 TableAlias = tableAlias,
                 JoinCondition = joinCondition,
-                Type = typeof(T),
+                TableType = typeof(T),
                 JoinType = joinType
             };
             _sQLQuery.Joins.Add(joinInfo);
@@ -119,7 +117,7 @@ namespace SQLQueryBuilder.Builder
             validatorContext.DtoManager.RegisterDTO(_sQLQuery.OutputDTO);
 
             // From
-            var fromTable = CreateTableSource(_sQLQuery.From.alias, _sQLQuery.From.type);
+            var fromTable = SQLBuilderHelper.BuildTableSource(_sQLQuery.From.alias, _sQLQuery.From.type);
             validatorContext.Span = fromTable.rawName.AsSpan();
             SQLSemanticValidator.ValidateFrom(fromTable.source, ref validatorContext);
 
@@ -130,16 +128,9 @@ namespace SQLQueryBuilder.Builder
                 joins = new List<JoinSource>();
                 foreach (var join in _sQLQuery.Joins)
                 {
-                    var joinTable = CreateTableSource(join.TableAlias, join.Type);
-
-                    var joinSource = new JoinSource
-                    {
-                        Table = joinTable.source,
-                        Condition = SQLBuilderHelper.BuildPredicate(join.JoinCondition),
-                        JoinType = join.JoinType
-                    };
-
+                    var joinSource = SQLBuilderHelper.BuildJoinSource(join);
                     joins.Add(joinSource);
+
                     validatorContext.Span = join.JoinCondition.AsSpan();
                     SQLSemanticValidator.ValidateJoins(joinSource, ref validatorContext);
                 }
@@ -237,22 +228,6 @@ namespace SQLQueryBuilder.Builder
             SQLGenerator.BuildLimit(_sQLQuery.Limit, ref _GeneratorContext);
 
             return SQLGenerator.Build(ref _GeneratorContext);
-        }
-
-        private string GetTableName(Type type) => type.GetCustomAttribute<TableAttribute>()?.Name ?? type.Name;
-        private (TableSource source, string rawName) CreateTableSource(string alias, Type type)
-        {
-            var rawName = GetTableName(type);
-            var name = SQLBuilderHelper.BuildFrom(rawName);
-
-            var source = new TableSource
-            {
-                Type = type,
-                TableName = name,
-                Alias = SQLBuilderHelper.BuildAlias(alias)
-            };
-
-            return (source, rawName);
         }
     }
 }

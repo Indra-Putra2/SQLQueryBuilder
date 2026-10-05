@@ -6,6 +6,7 @@ using SQLQueryBuilder.Core.Tokenizer;
 using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
+using SQLQueryBuilder.Test.Helper;
 using System.Diagnostics;
 using System.Text;
 
@@ -30,7 +31,7 @@ namespace SQLQueryBuilder.Test.TreadSafetyTest
 
                 for (var i = 0; i < iterationsPerTask; i++)
                 {
-                    var input = GetRandomLiteral(
+                    var input = TestHelper.GetRandomLiteral(
                         random.Next(1, 21),
                         random);
 
@@ -52,7 +53,7 @@ namespace SQLQueryBuilder.Test.TreadSafetyTest
         [Fact]
         public async Task BuildExpression_ShouldBeThreadSafe()
         {
-            const int taskCount = 10;
+            const int taskCount = 100;
             const int iterationsPerTask = 1_000;
 
             using var barrier = new Barrier(taskCount);
@@ -89,7 +90,7 @@ namespace SQLQueryBuilder.Test.TreadSafetyTest
                 .Select("r.*")
                 .ValidateBaseQuery();
 
-            const int taskCount = 10;
+            const int taskCount = 100;
             const int iterationsPerTask = 1_000;
 
             using var barrier = new Barrier(taskCount);
@@ -116,7 +117,6 @@ namespace SQLQueryBuilder.Test.TreadSafetyTest
 
             await Task.WhenAll(tasks);
         }
-
 
         private SQLParserContext CreateContext(string inputSql)
         {
@@ -145,79 +145,5 @@ namespace SQLQueryBuilder.Test.TreadSafetyTest
             ValidateTokens(ref context);
         }
         private IReadOnlyList<SQLToken> GetTokens(ref SQLParserContext context) => context.Tokens;
-
-        private (string str, SQLTokenType type) GetRandomIdentifier(int length, Random random)
-        {
-            const string chars =
-                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-            SQLTokenType type = SQLTokenType.Unknown;
-
-            var sb = new StringBuilder(length + 2);
-
-            for (var i = 0; i < length; i++)
-                sb.Append(chars[random.Next(chars.Length)]);
-
-            var text = sb.ToString();
-            if (SQLDictionary.SQLKeywords.Contains(text, StringComparer.OrdinalIgnoreCase))
-            {
-                return (text, SQLTokenType.Keyword);
-            }
-
-            switch (random.Next(3))
-            {
-                case 0:
-                    text = $"\"{text}\"";
-                    type = SQLTokenType.DoubleQuoteIdentifier;
-                    break;
-                case 1:
-                    text = $"[{text}]";
-                    type = SQLTokenType.BracketIdentifier;
-                    break;
-                default:
-                    type = SQLTokenType.Identifier;
-                    break;
-            }
-
-            return (text, type);
-        }
-        private (string str, SQLTokenType type) GetRandomString(int length, Random random)
-        {
-            const string chars =
-                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890~!@#$%^&*()_+`-=[]\\;\",./<>?:{}|";
-
-            SQLTokenType type = SQLTokenType.Unknown;
-
-            var sb = new StringBuilder(length + 2);
-
-            for (var i = 0; i < length; i++)
-                sb.Append(chars[random.Next(chars.Length)]);
-
-            var text = sb.ToString();
-
-            switch (random.Next(3))
-            {
-                case 0:
-                    text = $"N'{text}'";
-                    type = SQLTokenType.UnicodeString;
-                    break;
-                default:
-                    text = $"'{text}'";
-                    type = SQLTokenType.StringLiteral;
-                    break;
-            }
-
-            return (text, type);
-        }
-        private (string str, SQLTokenType type) GetRandomLiteral(int length, Random random)
-        {
-            switch (random.Next(0, 2))
-            {
-                case 0:
-                    return GetRandomIdentifier(length, random);
-                default:
-                    return GetRandomString(length, random);
-            }
-        }
     }
 }

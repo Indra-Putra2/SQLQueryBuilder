@@ -7,7 +7,9 @@ using SQLQueryBuilder.Interface;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.QueryBuilder;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Data;
+using System.Reflection;
 using System.Text;
 
 namespace SQLQueryBuilder.Helper
@@ -87,6 +89,42 @@ namespace SQLQueryBuilder.Helper
             return column.Column;
         }
 
+        // Source Maker
+        public static (TableSource source, string rawName) BuildTableSource(string alias, Type type)
+        {
+            var rawName = type.GetCustomAttribute<TableAttribute>()?.Name ?? type.Name;
+            var name = SQLBuilderHelper.BuildFrom(rawName);
+
+            var source = new TableSource
+            {
+                Type = type,
+                TableName = name,
+                Alias = SQLBuilderHelper.BuildAlias(alias)
+            };
+
+            return (source, rawName);
+        }
+
+        public static JoinSource BuildJoinSource(JoinInfo joinInfo)
+        {
+            var table = BuildTableSource(joinInfo.TableAlias, joinInfo.TableType);
+            return new JoinSource
+            {
+                Table = table.source,
+                Condition = BuildPredicate(joinInfo.JoinCondition),
+                JoinType = joinInfo.JoinType
+            };
+        }
+        public static JoinSource BuildJoinSource(TableSource tableSource, JoinInfo joinInfo)
+        {
+            return new JoinSource
+            {
+                Table = tableSource,
+                Condition = BuildPredicate(joinInfo.JoinCondition),
+                JoinType = joinInfo.JoinType
+            };
+        }
+        // AST walker
         public static IASTTraverser ASTWalkerBuiler(IASTVisitor walker) => new ASTWalker(walker);
     }
 }
