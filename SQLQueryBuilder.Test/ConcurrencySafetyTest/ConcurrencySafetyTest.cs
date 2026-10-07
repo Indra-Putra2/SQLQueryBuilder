@@ -1,18 +1,15 @@
 ﻿using HardwareInventoryLibrary.Ram;
 using SQLQueryBuilder.Builder;
-using SQLQueryBuilder.Core.SQLEnum.Tokenizer;
 using SQLQueryBuilder.Core.SQLExpression;
 using SQLQueryBuilder.Core.Tokenizer;
 using SQLQueryBuilder.Helper;
-using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Test.Helper;
 using System.Diagnostics;
-using System.Text;
 
-namespace SQLQueryBuilder.Test.TreadSafetyTest
+namespace SQLQueryBuilder.Test.ConcurrencySafetyTest
 {
-    public class ThreadSafetyTest
+    public class ConcurrencySafetyTest
     {
         [Fact]
         public async Task BuildTokens_ShouldBeThreadSafe()
@@ -105,7 +102,7 @@ namespace SQLQueryBuilder.Test.TreadSafetyTest
                         var input = $"r.price < {i}";
 
                         var result = cache
-                            .Copy()
+                            .CopyBase()
                             .Where(input)
                             .Build();
 

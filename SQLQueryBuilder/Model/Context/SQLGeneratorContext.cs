@@ -7,9 +7,9 @@ namespace SQLQueryBuilder.Model.Context
     {
         private SQLGeneratorBase? _base;
 
-        public int TemporaryIndex = 1;
-        public int Indent = 0;
-        public bool Parameterize = false;
+        public int TemporaryIndex { get; private set; } = 1;
+        public int Indent { get; private set; } = 0; 
+        public bool Parameterize { get; private set; } = false;
         public bool BaseValidated => _base != null;
         public StringBuilder TemporaryString;
         public DynamicParameters TemporaryParameters;
@@ -28,6 +28,10 @@ namespace SQLQueryBuilder.Model.Context
             _base = generatorBase;
         }
 
+        public int GetNextIndex() => TemporaryIndex++;
+        public void IncreaseIndent() => Indent++;
+        public void DecreaseIndent() => Indent = Math.Max(0, Indent - 1);
+        public void SetParameterize(bool val) => Parameterize = val;
         public void SetBase()
         {
             if (_base != null)
@@ -48,13 +52,9 @@ namespace SQLQueryBuilder.Model.Context
 
             TemporaryIndex = _base.ParameterIndex;
 
-            TemporaryString.Clear()
-                .Append(_base.SQL);
-
+            TemporaryString.Clear().Append(_base.SQL);
             TemporaryParameters = CloneParameters(_base.Parameters);
         }
-
-        public SQLGeneratorBase? GetBase() => _base;
 
         private static DynamicParameters CloneParameters(DynamicParameters source)
         {

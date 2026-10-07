@@ -565,8 +565,8 @@ namespace SQLQueryBuilder.Test.QueryBuilderTest
                 .Select("r.*")
                 .ValidateBaseQuery();
 
-            var copy1 = cache.Copy().Where("r.price > 10");
-            var copy2 = cache.Copy().OrderBy("r.name");
+            var copy1 = cache.CopyBase().Where("r.price > 10");
+            var copy2 = cache.CopyBase().OrderBy("r.name");
 
             var result1 = copy1.Build();
             var result2 = copy2.Build();

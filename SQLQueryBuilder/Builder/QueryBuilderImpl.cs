@@ -151,8 +151,10 @@ namespace SQLQueryBuilder.Builder
             return this;
         }
 
-        public IQueryFilter Copy()
+        public IQueryFilter CopyBase()
         {
+            ValidateBaseQuery();
+
             return new QueryBuilderImpl<TBase>(
                 _sQLQuery,
                 _tableManager,
@@ -162,10 +164,7 @@ namespace SQLQueryBuilder.Builder
 
         public SQLQueryResult Build()
         {
-            if (!_GeneratorContext.BaseValidated)
-            {
-                ValidateBaseQuery();
-            }
+            ValidateBaseQuery();
 
             _GeneratorContext.RefreshToBase();
 

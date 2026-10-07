@@ -355,7 +355,11 @@ namespace SQLQueryBuilder.Builder.SQLParser
                 {
                     SQLTokenType.BitwiseLeftShift => SQLBinaryOperator.BitwiseLeftShift,
                     SQLTokenType.BitwiseRightShift => SQLBinaryOperator.BitwiseRightShift,
-                    _ => throw new InvalidOperationException()
+                    _ => throw new SyntaxErrorException(
+                        ErrorFormatter.Create(
+                            context.Span.ToString(),
+                            context.Current.StartPosition,
+                            $"Invalid Bitwise Operator {context.GetSlice(token)}"))
                 };
 
                 var right = ParseAddition(ref context);
@@ -969,9 +973,11 @@ namespace SQLQueryBuilder.Builder.SQLParser
             if (!SQLParserHelper.IsCurrentKeyword(context, "NOT"))
                 return false;
 
-            return SQLParserHelper.IsKeyword(context.Peek(), "IN", context)
-                || SQLParserHelper.IsKeyword(context.Peek(), "LIKE", context)
-                || SQLParserHelper.IsKeyword(context.Peek(), "BETWEEN", context);
+            var next = context.Peek();
+
+            return SQLParserHelper.IsKeyword(next, "IN", context)
+                || SQLParserHelper.IsKeyword(next, "LIKE", context)
+                || SQLParserHelper.IsKeyword(next, "BETWEEN", context);
         }
     }
 }

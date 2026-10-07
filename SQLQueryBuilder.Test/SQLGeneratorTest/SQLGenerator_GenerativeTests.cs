@@ -6,13 +6,11 @@ using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model.QueryBuilder;
 using SQLQueryBuilder.SQLEnum.QueryBuilder;
 using SQLQueryBuilder.Test.Helper;
-using System.ComponentModel.DataAnnotations.Schema;
-using System.Reflection;
-using System.Reflection.Emit;
 
-namespace SQLQueryBuilder.Test.SQLGeneratorTest
+namespace SQLQueryBuilder.Test.SQLGenerator_GenerativeTests
 {
-    public class GeneratorTest
+    [Trait("Category", "Generative / High-Volume")]
+    public class SQLGenerator_GenerativeTests
     {
         [Fact]
         public void SQLGenerator_BuildSelect_Must_emit_select_expression()
@@ -211,10 +209,12 @@ namespace SQLQueryBuilder.Test.SQLGeneratorTest
         [Fact]
         public void SQLGenerator_BuildLimit_Must_emit_Limit_expression()
         {
-            for(var i = 0; i < 10_000; i++)
+            for (var i = 0; i < 10_000; i++)
             {
                 var context = TestHelper.GetGeneratorContext();
                 SQLGenerator.BuildLimit(i, ref context);
+                var result = SQLGenerator.Build(ref context);
+                Assert.Equal($"LIMIT {i}", TestHelper.CleanString(result.SQL));
             }
         }
 
@@ -226,7 +226,7 @@ namespace SQLQueryBuilder.Test.SQLGeneratorTest
                     : input.str;
         }
 
-        private static TableSource BuildTableSource(string tableName,string alias, Type type)
+        private static TableSource BuildTableSource(string tableName, string alias, Type type)
         {
             var name = SQLBuilderHelper.BuildFrom(tableName);
 

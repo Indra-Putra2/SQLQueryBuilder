@@ -15,7 +15,7 @@ namespace SQLQueryBuilder.Builder
             Parameterize(ref context);
 
             context.TemporaryString.Append("SELECT");
-            context.Indent++;
+            context.IncreaseIndent();
 
             if (select == null)
                 throw new NullReferenceException("Select cannot be null.");
@@ -34,7 +34,7 @@ namespace SQLQueryBuilder.Builder
                 writeExpression(ref context, select[i]);
             }
 
-            context.Indent--;
+            context.DecreaseIndent();
         }
         public static void BuildFrom(TableSource from, ref SQLGeneratorContext context)
         {
@@ -394,7 +394,7 @@ namespace SQLQueryBuilder.Builder
                 context.TemporaryString.Append(' ');
             }
 
-            context.Indent++;
+            context.IncreaseIndent();
             foreach (var c in expression.Conditions)
             {
                 NewLine(ref context);
@@ -413,7 +413,7 @@ namespace SQLQueryBuilder.Builder
                 context.TemporaryString.Append("ELSE ");
                 writeExpression(ref context, expression.ElseExpression);
             }
-            context.Indent--;
+            context.IncreaseIndent();
             NewLine(ref context);
             IndentedLine(ref context);
             context.TemporaryString.Append("END");
@@ -524,7 +524,7 @@ namespace SQLQueryBuilder.Builder
             if (!context.Parameterize)
                 return false;
 
-            string paramName = $"@p{context.TemporaryIndex++}";
+            string paramName = $"@p{context.GetNextIndex()}";
 
             context.TemporaryString.Append(paramName);
             context.TemporaryParameters.Add(paramName, value);
@@ -562,7 +562,7 @@ namespace SQLQueryBuilder.Builder
         }
         private static void Parameterize(ref SQLGeneratorContext context, bool parameterize = false)
         {
-            context.Parameterize = parameterize;
+            context.SetParameterize(parameterize);
         }
         #endregion
         // Currently Unsupported

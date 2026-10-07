@@ -17,7 +17,7 @@ namespace SQLQueryBuilder.Model.Context
         }
 
         public char Current => (uint)Index < (uint)Span.Length ? Span[Index] : '\0';
-        public char Consume() => Index < Span.Length ? Span[Index++] : '\0';
+        public char Consume() => (uint)Index < (uint)Span.Length ? Span[Index++] : '\0';
         public char Peek(int offset = 1)
         {
             var index = Index + offset;
@@ -28,10 +28,7 @@ namespace SQLQueryBuilder.Model.Context
         }
         public void AdvanceIndex(int count)
         {
-            if (count < 0)
-                throw new ArgumentOutOfRangeException(nameof(count));
-
-            if (count > Span.Length - Index)
+            if ((uint)count > (uint)Span.Length - Index)
                 throw new ArgumentOutOfRangeException(nameof(count));
 
             Index += count;

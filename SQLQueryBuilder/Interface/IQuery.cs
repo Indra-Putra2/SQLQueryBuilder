@@ -26,7 +26,7 @@ namespace SQLQueryBuilder.Interface
 
     public interface IQueryFilter
     {
-        IQueryFilter Copy();
+        IQueryFilter CopyBase();
         IQueryFilter OrderBy(string? order);
         IQueryFilter GroupBy(string? groupBy);
         IQueryFilter Having(string? having);

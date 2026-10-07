@@ -24,7 +24,7 @@ namespace SQLQueryBuilder.Model.Context
         }
 
         public SQLToken Current => (uint)Index < (uint)Span.Length ? Tokens[Index] : Tokens[^1];
-        public SQLToken Consume() => Index < Span.Length ? Tokens[Index++] : Tokens[^1];
+        public SQLToken Consume() => (uint)Index < (uint)Span.Length ? Tokens[Index++] : Tokens[^1];
         public bool IsAtEnd => Index >= Tokens.Count;
         public SQLToken Peek(int offset = 1)
         {
