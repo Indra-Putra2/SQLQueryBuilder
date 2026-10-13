@@ -1,6 +1,6 @@
 ﻿namespace SQLQueryBuilder.Model.QueryBuilder
 {
-    internal record SQLQueryNew
+    internal record SQLQueryRaw
     {
         public required Type OutputDTO;
         public (string alias, Type type) From;
@@ -13,7 +13,7 @@
         public string? OrderBy { get; set; } = null;
         public int? Limit { get; set; }
 
-        public SQLQueryNew ClearFilter()
+        public SQLQueryRaw ClearFilter()
         {
             return this with
             {

@@ -13,7 +13,7 @@ namespace SQLQueryBuilder.Builder
     internal class QueryBuilderImpl<TBase> : IQueryFrom, IQuerySelect, IQuery, IQueryFilter
     {
         //new
-        private SQLQueryNew _sQLQuery;
+        private SQLQueryRaw _sQLQuery;
         private SQLGeneratorContext _GeneratorContext;
         private SQLTableManager _tableManager;
         private SQLDTOManager _dtoManager;
@@ -24,7 +24,7 @@ namespace SQLQueryBuilder.Builder
                 new StringBuilder(),
                 new DynamicParameters());
 
-            _sQLQuery = new SQLQueryNew
+            _sQLQuery = new SQLQueryRaw
             {
                 OutputDTO = typeof(TBase)
             };
@@ -33,7 +33,7 @@ namespace SQLQueryBuilder.Builder
             _dtoManager = new SQLDTOManager();
         }
         private QueryBuilderImpl(
-            SQLQueryNew sQLQuery,
+            SQLQueryRaw sQLQuery,
             SQLTableManager tableManager,
             SQLDTOManager dtoManager,
             SQLGeneratorContext baseContext)

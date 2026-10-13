@@ -2,7 +2,7 @@
 
 namespace SQLQueryBuilder.Builder
 {
-    public class QueryBuilder
+    public static class QueryBuilder
     {
         public static IQueryFrom Create<TBase>()
         {
