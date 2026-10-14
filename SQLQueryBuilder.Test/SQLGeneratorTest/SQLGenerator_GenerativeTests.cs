@@ -1,11 +1,12 @@
 ﻿using HardwareInventoryLibrary.Brand;
 using HardwareInventoryLibrary.Ram;
 using SQLQueryBuilder.Builder;
+using SQLQueryBuilder.Core.SQLEnum.QueryBuilder;
 using SQLQueryBuilder.Core.SQLEnum.Tokenizer;
 using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model.QueryBuilder;
-using SQLQueryBuilder.SQLEnum.QueryBuilder;
 using SQLQueryBuilder.Test.Helper;
+using System.Diagnostics;
 
 namespace SQLQueryBuilder.Test.SQLGenerator_GenerativeTests
 {
@@ -30,9 +31,11 @@ namespace SQLQueryBuilder.Test.SQLGenerator_GenerativeTests
                 var expectedInput = GetExpected(input);
 
                 var expected = TestHelper.CleanString($"SELECT {expectedInput}");
-                var actual = TestHelper.CleanString(result.SQL);
-
-                Assert.Equal(expected, actual);
+                var actualParameterized = TestHelper.CleanString(result.ParameterizedSQL);
+                var actualRaw = TestHelper.CleanString(result.RawSQL);
+                Debug.WriteLine(result.RawSQL);
+                Assert.Equal(expected, actualParameterized);
+                Assert.Equal(expected, actualRaw);
             }
         }
 
@@ -53,9 +56,11 @@ namespace SQLQueryBuilder.Test.SQLGenerator_GenerativeTests
                 var result = SQLGenerator.Build(ref context);
 
                 var expected = TestHelper.CleanString($"FROM {GetExpected(tableName)} AS {GetExpected(alias)}");
-                var actual = TestHelper.CleanString(result.SQL);
+                var actualParameterized = TestHelper.CleanString(result.ParameterizedSQL);
+                var actualRaw = TestHelper.CleanString(result.RawSQL);
 
-                Assert.Equal(expected, actual);
+                Assert.Equal(expected, actualParameterized);
+                Assert.Equal(expected, actualRaw);
             }
         }
 
@@ -98,9 +103,11 @@ namespace SQLQueryBuilder.Test.SQLGenerator_GenerativeTests
                 SQLGenerator.BuildJoins(new List<JoinSource>() { joinSource }, ref context);
                 var result = SQLGenerator.Build(ref context);
                 var expected = $"{joinType} JOIN {GetExpected(tableName)} AS {expectedAliasLeft} ON {expectedAliasLeft}.{expectedColumnLeft} = {expectedAliasRight}.{expectedColumnRight}";
-                var actual = TestHelper.CleanString(result.SQL);
+                var actualParameterized = TestHelper.CleanString(result.ParameterizedSQL);
+                var actualRaw = TestHelper.CleanString(result.RawSQL);
 
-                Assert.Equal(expected, actual);
+                Assert.Equal(expected, actualParameterized);
+                Assert.Equal(expected, actualRaw);
             }
         }
 
@@ -123,11 +130,15 @@ namespace SQLQueryBuilder.Test.SQLGenerator_GenerativeTests
 
                 var expectedCol = GetExpected(col);
 
-                var expected = TestHelper.CleanString($"HAVING {expectedCol} LIKE @p1");
-                var actual = TestHelper.CleanString(result.SQL);
+                var expectedParameterized = TestHelper.CleanString($"HAVING {expectedCol} LIKE @p1");
+                var actualParameterized = TestHelper.CleanString(result.ParameterizedSQL);
 
-                Assert.Equal(expected, actual);
-                Assert.Equal(SQLParserHelper.UnescapeStringLiteral(str.str), result.Parameters.Get<string>("@p1"));
+                var expectedRaw = TestHelper.CleanString($"HAVING {expectedCol} LIKE {str.str}");
+                var actualRaw = TestHelper.CleanString(result.RawSQL);
+
+                Assert.Equal(expectedParameterized, actualParameterized);
+                TestHelper.IsEqual(SQLParserHelper.UnescapeStringLiteral(str.str), "@p1", result);
+                Assert.Equal(expectedRaw, actualRaw);
             }
         }
 
@@ -150,11 +161,15 @@ namespace SQLQueryBuilder.Test.SQLGenerator_GenerativeTests
 
                 var expectedInput = GetExpected(col);
 
-                var expected = TestHelper.CleanString($"WHERE {expectedInput} LIKE @p1");
-                var actual = TestHelper.CleanString(result.SQL);
+                var expectedParameterized = TestHelper.CleanString($"WHERE {expectedInput} LIKE @p1");
+                var actualParameterized = TestHelper.CleanString(result.ParameterizedSQL);
 
-                Assert.Equal(expected, actual);
-                Assert.Equal(SQLParserHelper.UnescapeStringLiteral(str.str), result.Parameters.Get<string>("@p1"));
+                var expectedRaw = TestHelper.CleanString($"WHERE {expectedInput} LIKE {str.str}");
+                var actualRaw = TestHelper.CleanString(result.RawSQL);
+
+                Assert.Equal(expectedParameterized, actualParameterized);
+                TestHelper.IsEqual(SQLParserHelper.UnescapeStringLiteral(str.str), "@p1", result);
+                Assert.Equal(expectedRaw, actualRaw);
             }
         }
 
@@ -176,9 +191,11 @@ namespace SQLQueryBuilder.Test.SQLGenerator_GenerativeTests
                 var expectedInput = GetExpected(input);
 
                 var expected = TestHelper.CleanString($"GROUP BY {expectedInput}");
-                var actual = TestHelper.CleanString(result.SQL);
+                var parameterized = TestHelper.CleanString(result.ParameterizedSQL);
+                var raw = TestHelper.CleanString(result.RawSQL);
 
-                Assert.Equal(expected, actual);
+                Assert.Equal(expected, parameterized);
+                Assert.Equal(expected, raw);
             }
         }
 
@@ -200,9 +217,11 @@ namespace SQLQueryBuilder.Test.SQLGenerator_GenerativeTests
                 var expectedInput = GetExpected(input);
 
                 var expected = TestHelper.CleanString($"ORDER BY {expectedInput} {order}");
-                var actual = TestHelper.CleanString(result.SQL);
+                var parameterized = TestHelper.CleanString(result.ParameterizedSQL);
+                var raw = TestHelper.CleanString(result.RawSQL);
 
-                Assert.Equal(expected, actual);
+                Assert.Equal(expected, parameterized);
+                Assert.Equal(expected, raw);
             }
         }
 
@@ -214,7 +233,8 @@ namespace SQLQueryBuilder.Test.SQLGenerator_GenerativeTests
                 var context = TestHelper.GetGeneratorContext();
                 SQLGenerator.BuildLimit(i, ref context);
                 var result = SQLGenerator.Build(ref context);
-                Assert.Equal($"LIMIT {i}", TestHelper.CleanString(result.SQL));
+                Assert.Equal($"LIMIT {i}", TestHelper.CleanString(result.ParameterizedSQL));
+                Assert.Equal($"LIMIT {i}", TestHelper.CleanString(result.RawSQL));
             }
         }
 

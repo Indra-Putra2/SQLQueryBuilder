@@ -662,7 +662,16 @@ namespace SQLQueryBuilder.Builder.SQLParser
                     }
 
                     if (!SQLParserHelper.Expects(context.Current, SQLDictionary.Identifiers) && !SQLParserHelper.Expect(context.Current, SQLTokenType.Keyword))
-                        throw new SyntaxErrorException("Expected identifier after '.'");
+                    {
+                        var err = ErrorFormatter.Create(
+                            context.Span.ToString(),
+                            context.Current.StartPosition,
+                            "Expected identifier after '.'",
+                            errorTextLength: context.Current.Length);
+
+                        throw new SyntaxErrorException(err);
+                    }
+                        
 
                     lastToken = context.Consume();
 

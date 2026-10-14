@@ -1,7 +1,7 @@
-﻿using Dapper;
-using HardwareInventoryLibrary.Brand;
+﻿using HardwareInventoryLibrary.Brand;
 using HardwareInventoryLibrary.Ram;
 using SQLQueryBuilder.Builder;
+using SQLQueryBuilder.Core.QueryBuilder;
 using SQLQueryBuilder.Core.SQLExpression;
 using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Interface;
@@ -9,8 +9,8 @@ using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Test.Helper;
 using System.Data;
+using System.Diagnostics;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace SQLQueryBuilder.Test.QueryBuilderTest
 {
@@ -57,14 +57,14 @@ namespace SQLQueryBuilder.Test.QueryBuilderTest
                     "WHERE \"r\".\"Price\" > @p2 AND \"r\".\"Name\" = @p3 " +
                     "GROUP BY \"r\".\"Name\" " +
                     "HAVING AVG(\"r\".\"Price\") > @p4"),
-                TestHelper.CleanString(query.SQL));
+                TestHelper.CleanString(query.ParameterizedSQL));
 
-            Assert.Equal(4, query.Parameters.ParameterNames.Count());
+            Assert.Equal(4, query.Parameters.Count);
 
-            Assert.Equal("Corsair", query.Parameters.Get<string>("@p1"));
-            Assert.Equal(100, query.Parameters.Get<int>("@p2"));
-            Assert.Equal("Vengeance", query.Parameters.Get<string>("@p3"));
-            Assert.Equal(50, query.Parameters.Get<int>("@p4"));
+            TestHelper.IsEqual("Corsair", "@p1", query);
+            TestHelper.IsEqual(100, "@p2", query);
+            TestHelper.IsEqual("Vengeance", "@p3", query);
+            TestHelper.IsEqual(50, "@p4", query);
         }
         [Theory]
         [InlineData(
@@ -146,14 +146,14 @@ namespace SQLQueryBuilder.Test.QueryBuilderTest
                 .Where(where)
                 .Build();
 
-            Assert.Equal(TestHelper.CleanString(expectedSql), TestHelper.CleanString(query.SQL));
+            Assert.Equal(TestHelper.CleanString(expectedSql), TestHelper.CleanString(query.ParameterizedSQL));
 
-            Assert.Equal(expectedParams.Length, query.Parameters.ParameterNames.Count());
+            Assert.Equal(expectedParams.Length, query.Parameters.Count);
 
             for (int i = 0; i < expectedParams.Length; i++)
             {
                 string paramName = $"@p{i + 1}";
-                Assert.Equal(expectedParams[i], query.Parameters.Get<object>(paramName));
+                TestHelper.IsEqual(expectedParams[i], paramName, query);
             }
         }
 
@@ -233,16 +233,16 @@ namespace SQLQueryBuilder.Test.QueryBuilderTest
                 .Build();
 
             // 1. Assert Clean SQL Output
-            Assert.Equal(TestHelper.CleanString(expectedSql), TestHelper.CleanString(query.SQL));
+            Assert.Equal(TestHelper.CleanString(expectedSql), TestHelper.CleanString(query.ParameterizedSQL));
 
             // 2. Assert Parameter Count Matches
-            Assert.Equal(expectedParams.Length, query.Parameters.ParameterNames.Count());
+            Assert.Equal(expectedParams.Length, query.Parameters.Count);
 
             // 3. Assert Parameter Indexing & Values Match
             for (int i = 0; i < expectedParams.Length; i++)
             {
                 string paramName = $"@p{i + 1}";
-                Assert.Equal(expectedParams[i], query.Parameters.Get<object>(paramName));
+                TestHelper.IsEqual(expectedParams[i], paramName, query);
             }
         }
 
@@ -261,10 +261,11 @@ namespace SQLQueryBuilder.Test.QueryBuilderTest
                 .Where(where)
                 .Build();
 
-            Assert.Equal(TestHelper.CleanString(expected), TestHelper.CleanString(query.SQL));
+            Assert.Equal(TestHelper.CleanString(expected), TestHelper.CleanString(query.ParameterizedSQL));
 
-            Assert.Equal(first, query.Parameters.Get<object>("@p1"));
-            Assert.Equal(second, query.Parameters.Get<object>("@p2"));
+
+            TestHelper.IsEqual(first, "@p1", query);
+            TestHelper.IsEqual(second, "@p2", query);
         }
         #endregion
 
@@ -323,7 +324,7 @@ namespace SQLQueryBuilder.Test.QueryBuilderTest
                 .Join<BrandReadModel>("b", "\"r\".\"Id\" = \"b\".\"Id\"")
                 .Build();
 
-            Assert.Equal(TestHelper.CleanString(expected), TestHelper.CleanString(query.SQL));
+            Assert.Equal(TestHelper.CleanString(expected), TestHelper.CleanString(query.ParameterizedSQL));
         }
         #endregion
 
@@ -396,7 +397,7 @@ namespace SQLQueryBuilder.Test.QueryBuilderTest
                 .Where(where)
                 .Build();
 
-            Assert.Equal(TestHelper.CleanString(expectedSql), TestHelper.CleanString(query.SQL));
+            Assert.Equal(TestHelper.CleanString(expectedSql), TestHelper.CleanString(query.ParameterizedSQL));
         }
 
         [Theory]
@@ -444,7 +445,7 @@ namespace SQLQueryBuilder.Test.QueryBuilderTest
                 .Having(having)
                 .Build();
 
-            Assert.Equal(TestHelper.CleanString(expected), TestHelper.CleanString(query.SQL));
+            Assert.Equal(TestHelper.CleanString(expected), TestHelper.CleanString(query.ParameterizedSQL));
         }
 
         [Theory]
@@ -485,7 +486,9 @@ namespace SQLQueryBuilder.Test.QueryBuilderTest
                 .OrderBy(orderBy)
                 .Build();
 
-            Assert.Equal(TestHelper.CleanString(expected), TestHelper.CleanString(query.SQL));
+            Debug.WriteLine($"Expected: {TestHelper.CleanString(expected)}\n" +
+                $"Actual: {TestHelper.CleanString(query.ParameterizedSQL)}");
+            Assert.Equal(TestHelper.CleanString(expected), TestHelper.CleanString(query.ParameterizedSQL));
         }
 
         [Theory]
@@ -550,7 +553,7 @@ namespace SQLQueryBuilder.Test.QueryBuilderTest
                 .OrderBy(orderBy)
                 .Build();
 
-            Assert.Equal(TestHelper.CleanString(expected), TestHelper.CleanString(query.SQL));
+            Assert.Equal(TestHelper.CleanString(expected), TestHelper.CleanString(query.ParameterizedSQL));
         }
         #endregion
 
@@ -572,14 +575,14 @@ namespace SQLQueryBuilder.Test.QueryBuilderTest
             var result2 = copy2.Build();
             var original = cache.Build();
 
-            Assert.Contains("WHERE", result1.SQL);
-            Assert.DoesNotContain("ORDER BY", result1.SQL);
+            Assert.Contains("WHERE", result1.ParameterizedSQL);
+            Assert.DoesNotContain("ORDER BY", result1.ParameterizedSQL);
 
-            Assert.Contains("ORDER BY", result2.SQL);
-            Assert.DoesNotContain("WHERE", result2.SQL);
+            Assert.Contains("ORDER BY", result2.ParameterizedSQL);
+            Assert.DoesNotContain("WHERE", result2.ParameterizedSQL);
 
-            Assert.DoesNotContain("WHERE", original.SQL);
-            Assert.DoesNotContain("ORDER BY", original.SQL);
+            Assert.DoesNotContain("WHERE", original.ParameterizedSQL);
+            Assert.DoesNotContain("ORDER BY", original.ParameterizedSQL);
         }
         #endregion
 
@@ -629,11 +632,11 @@ namespace SQLQueryBuilder.Test.QueryBuilderTest
                 From = fromSource,
                 Select = select
             };
-            var context = new SQLGeneratorContext(new StringBuilder(), new DynamicParameters());
+            var context = new SQLGeneratorContext(new StringBuilder(), new StringBuilder());
             SQLGenerator.BuildSelect(select, ref context);
             SQLGenerator.BuildFrom(fromSource, ref context);
             var result = SQLGenerator.Build(ref context);
-            Assert.Equal(TestHelper.CleanString(expectedQuery), TestHelper.CleanString(result.SQL));
+            Assert.Equal(TestHelper.CleanString(expectedQuery), TestHelper.CleanString(result.ParameterizedSQL));
         }
         #endregion
 

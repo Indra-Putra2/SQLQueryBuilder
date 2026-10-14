@@ -1,16 +1,12 @@
-﻿using Dapper;
-using SQLQueryBuilder.Builder;
-using SQLQueryBuilder.Builder.SQLParser;
+﻿using SQLQueryBuilder.Builder.SQLParser;
 using SQLQueryBuilder.Core.SQLEnum.Tokenizer;
 using SQLQueryBuilder.Core.SQLExpression;
 using SQLQueryBuilder.Interface;
-using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.QueryBuilder;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Data;
 using System.Reflection;
-using System.Text;
 
 namespace SQLQueryBuilder.Helper
 {

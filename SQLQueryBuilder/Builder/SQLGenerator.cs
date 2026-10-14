@@ -1,9 +1,11 @@
-﻿using SQLQueryBuilder.Core.SQLEnum.SQLExpression;
+﻿using SQLQueryBuilder.Core.QueryBuilder;
+using SQLQueryBuilder.Core.SQLEnum.QueryBuilder;
+using SQLQueryBuilder.Core.SQLEnum.SQLExpression;
 using SQLQueryBuilder.Core.SQLExpression;
 using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Model.Context;
-using SQLQueryBuilder.Model.QueryBuilder;
-using SQLQueryBuilder.SQLEnum.QueryBuilder;
+using System.Collections.Frozen;
+using System.Data;
 
 namespace SQLQueryBuilder.Builder
 {
@@ -14,7 +16,7 @@ namespace SQLQueryBuilder.Builder
         {
             Parameterize(ref context);
 
-            context.TemporaryString.Append("SELECT");
+            WriteValue("SELECT", ref context);
             context.IncreaseIndent();
 
             if (select == null)
@@ -26,7 +28,7 @@ namespace SQLQueryBuilder.Builder
             {
                 if (i > 0)
                 {
-                    context.TemporaryString.Append(",");
+                    WriteValue(",", ref context);
                     NewLine(ref context);
                 }
 
@@ -45,16 +47,16 @@ namespace SQLQueryBuilder.Builder
 
             NewLine(ref context);
             var names = from.TableName;
-            context.TemporaryString.Append("FROM ");
+            WriteValue("FROM ", ref context);
             for (int i = 0; i < names.Count; i++)
             {
                 AppendColumn(names[i], ref context);
                 if (i != names.Count - 1)
-                    context.TemporaryString.Append(".");
+                    WriteValue(".", ref context);
             }
             if (from.Alias != null)
             {
-                context.TemporaryString.Append($" AS ");
+                WriteValue($" AS ", ref context);
                 AppendColumn(from.Alias, ref context);
             }
 
@@ -76,23 +78,23 @@ namespace SQLQueryBuilder.Builder
                 };
 
                 NewLine(ref context);
-                context.TemporaryString.Append(joinType);
+                WriteValue(joinType, ref context);
 
                 var joinTable = join.Table.TableName;
                 for (int i = 0; i < joinTable.Count; i++)
                 {
                     AppendColumn(joinTable[i], ref context);
                     if (i != joinTable.Count - 1)
-                        context.TemporaryString.Append(".");
+                        WriteValue(".", ref context);
                 }
 
                 if (join.Table.Alias != null)
                 {
-                    context.TemporaryString.Append(" AS ");
+                    WriteValue(" AS ", ref context);
                     AppendColumn(join.Table.Alias, ref context);
                 }
 
-                context.TemporaryString.Append(" ON ");
+                WriteValue(" ON ", ref context);
 
                 Parameterize(ref context, true);
                 writeExpression(ref context, join.Condition);
@@ -103,7 +105,7 @@ namespace SQLQueryBuilder.Builder
             if (having == null) return;
 
             NewLine(ref context);
-            context.TemporaryString.Append("HAVING ");
+            WriteValue("HAVING ", ref context);
 
             Parameterize(ref context, true);
             writeExpression(ref context, having);
@@ -113,7 +115,7 @@ namespace SQLQueryBuilder.Builder
             if (where == null) return;
 
             NewLine(ref context);
-            context.TemporaryString.Append("WHERE ");
+            WriteValue("WHERE ", ref context);
 
             Parameterize(ref context, true);
             writeExpression(ref context, where);
@@ -124,11 +126,11 @@ namespace SQLQueryBuilder.Builder
             if (groupBy.Count == 0) return;
 
             NewLine(ref context);
-            context.TemporaryString.Append("GROUP BY ");
+            WriteValue("GROUP BY ", ref context);
             for (int i = 0; i < groupBy.Count; i++)
             {
                 if (i > 0)
-                    context.TemporaryString.Append(", ");
+                    WriteValue(", ", ref context);
 
                 Parameterize(ref context, true);
                 writeExpression(ref context, groupBy[i]);
@@ -140,11 +142,11 @@ namespace SQLQueryBuilder.Builder
             if (orderBy.Count == 0) return;
 
             NewLine(ref context);
-            context.TemporaryString.Append("ORDER BY ");
+            WriteValue("ORDER BY ", ref context);
             for (int i = 0; i < orderBy.Count; i++)
             {
                 if (i > 0)
-                    context.TemporaryString.Append(", ");
+                    WriteValue(", ", ref context);
 
                 Parameterize(ref context, true);
                 writeExpression(ref context, orderBy[i]);
@@ -155,16 +157,28 @@ namespace SQLQueryBuilder.Builder
             if (limit == null || limit < 0) return;
 
             NewLine(ref context);
-            context.TemporaryString.Append($"LIMIT {limit}");
+            WriteValue($"LIMIT {limit}", ref context);
         }
 
         public static SQLQueryResult Build(ref SQLGeneratorContext context)
         {
-            var result = new SQLQueryResult();
-            result.SetSQL(context.TemporaryString.ToString());
-            result.SetParameterIndex(context.TemporaryIndex);
-            result.SetParameter(context.TemporaryParameters);
-            return result;
+            var temp = new Dictionary<string, QueryParameter>(
+                context.TempParameters.Count + (context.GetBase?.Parameters.Count ?? 0));
+
+            foreach (var param in context.TempParameters)
+                temp[param.Key] = param.Value;
+
+            if (context.GetBase is not null)
+            {
+                foreach (var param in context.GetBase.Parameters)
+                    temp[param.Key] = param.Value;
+            }
+
+            return new SQLQueryResult(
+                temp.ToFrozenDictionary(),
+                context.TempParametizedSQL.ToString(),
+                context.TempRawSQL.ToString()
+            );
         }
         #endregion
 
@@ -236,55 +250,69 @@ namespace SQLQueryBuilder.Builder
         }
         private static void WriteLiteral(LiteralExpression expression, ref SQLGeneratorContext context)
         {
-            if (TryWriteParameter(expression.Value, ref context))
-                return;
-
             switch (expression.Type)
             {
                 case SQLLiteralType.Money:
-                    context.TemporaryString.Append('$').Append(expression.Value);
+                    if(context.Parameterize)
+                        WriteRaw("$", ref context);
+                    else
+                        WriteValue("$", ref context);
+
+                    WriteValue(expression.Value, DbType.Decimal, ref context);
                     break;
 
                 case SQLLiteralType.BinaryLiteral:
-                    context.TemporaryString.Append("0x").Append(expression.Value);
+                    if (context.Parameterize)
+                        WriteRaw("0x", ref context);
+                    else
+                        WriteValue("0x", ref context);
+
+                    WriteValue(expression.Value, DbType.Binary, ref context);
                     break;
 
                 case SQLLiteralType.UnicodeString:
-                    context.TemporaryString.Append("N")
-                          .Append(SQLParserHelper.EscapeStringLiteral((string)expression.Value));
+                    if (context.Parameterize)
+                        WriteRaw("N", ref context);
+                    else
+                        WriteValue("N", ref context);
+
+                    WriteValue(expression.Value, DbType.String, ref context);
                     break;
 
                 case SQLLiteralType.String:
-                    context.TemporaryString.Append(
-                        SQLParserHelper.EscapeStringLiteral((string)expression.Value));
+                    WriteValue(expression.Value, DbType.String, ref context);
                     break;
 
                 case SQLLiteralType.Scientific:
+                    WriteValue(expression.Value, DbType.Double, ref context);
+                    break;
                 case SQLLiteralType.Decimal:
+                    WriteValue(expression.Value, DbType.Decimal, ref context);
+                    break;
                 case SQLLiteralType.Integer:
-                    context.TemporaryString.Append(expression.Value);
+                    WriteValue(expression.Value, DbType.Int32, ref context);
                     break;
 
                 case SQLLiteralType.Date:
-                    context.TemporaryString.Append("CAST('")
-                          .Append(((DateOnly)expression.Value).ToString("yyyy-MM-dd"))
-                          .Append("' AS DATE)");
+                    WriteValue("CAST('", ref context);
+                    WriteValue(((DateOnly)expression.Value).ToString("yyyy-MM-dd"), DbType.Date, ref context);
+                    WriteValue("' AS DATE)", ref context);
                     break;
 
                 case SQLLiteralType.Time:
-                    context.TemporaryString.Append("CAST('")
-                          .Append(((TimeOnly)expression.Value).ToString("HH:mm:ss.FFFFFFF"))
-                          .Append("' AS TIME)");
+                    WriteValue("CAST('", ref context);
+                    WriteValue(((TimeOnly)expression.Value).ToString("HH:mm:ss.FFFFFFF"), DbType.Time, ref context);
+                    WriteValue("' AS TIME)", ref context);
                     break;
 
                 case SQLLiteralType.Datetime:
-                    context.TemporaryString.Append("CAST('")
-                          .Append(((DateTime)expression.Value).ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF"))
-                          .Append("' AS DATETIME)");
+                    WriteValue("CAST('", ref context);
+                    WriteValue(((DateTime)expression.Value).ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF"), DbType.DateTime, ref context);
+                    WriteValue("' AS DATETIME)", ref context);
                     break;
 
                 case SQLLiteralType.Null:
-                    context.TemporaryString.Append("NULL");
+                    WriteValue("NULL", ref context);
                     break;
             }
         }
@@ -294,9 +322,9 @@ namespace SQLQueryBuilder.Builder
             {
                 foreach (var iden in expression.Table)
                     AppendColumn(iden, ref context);
-                context.TemporaryString.Append(".");
+                WriteValue(".", ref context);
             }
-            
+
             AppendColumn(expression.Column, ref context);
 
         }
@@ -334,7 +362,9 @@ namespace SQLQueryBuilder.Builder
                 _ => throw new NotSupportedException($"Binary with the operator {expression.Operator} is not Supported")
             };
 
-            context.TemporaryString.Append(' ').Append(op).Append(' ');
+            WriteValue(' ', ref context);
+            WriteValue(op, ref context);
+            WriteValue(' ', ref context);
 
             writeExpression(ref context, expression.Right);
         }
@@ -348,13 +378,10 @@ namespace SQLQueryBuilder.Builder
 
                 if (expression.Operator == SQLUnaryOperator.Negative)
                 {
-                    value = Negate(value);
+                    Negate(value, ref context);
                 }
-
-                TryWriteParameter(value, ref context);
                 return;
             }
-
 
             var op = expression.Operator switch
             {
@@ -366,32 +393,33 @@ namespace SQLQueryBuilder.Builder
             };
 
             string space = expression.Operator == SQLUnaryOperator.NOT ? " " : "";
-            context.TemporaryString.Append(op).Append(space);
+            WriteValue(op, ref context);
+            WriteValue(space, ref context);
 
             writeExpression(ref context, expression.Operand);
         }
         private static void WriteFunction(FunctionExpression expression, ref SQLGeneratorContext context)
         {
-            context.TemporaryString.Append(expression.Name).Append("(");
+            context.TempParametizedSQL.Append(expression.Name).Append("(");
 
             for (int i = 0; i < expression.Arguments.Count; i++)
             {
                 if (i > 0)
-                    context.TemporaryString.Append(", ");
+                    WriteValue(", ", ref context);
 
                 writeExpression(ref context, expression.Arguments[i]);
             }
 
-            context.TemporaryString.Append(")");
+            WriteValue(")", ref context);
         }
         private static void WriteCase(CaseExpression expression, ref SQLGeneratorContext context)
         {
-            context.TemporaryString.Append("CASE ");
+            WriteValue("CASE ", ref context);
 
             if (expression.BaseExpression != null)
             {
                 writeExpression(ref context, expression.BaseExpression);
-                context.TemporaryString.Append(' ');
+                context.TempParametizedSQL.Append(' ');
             }
 
             context.IncreaseIndent();
@@ -399,10 +427,10 @@ namespace SQLQueryBuilder.Builder
             {
                 NewLine(ref context);
                 IndentedLine(ref context);
-                context.TemporaryString.Append("WHEN ");
+                WriteValue("WHEN ", ref context);
                 writeExpression(ref context, c.Condition);
 
-                context.TemporaryString.Append(" THEN ");
+                WriteValue(" THEN ", ref context);
                 writeExpression(ref context, c.Result);
             }
 
@@ -410,13 +438,13 @@ namespace SQLQueryBuilder.Builder
             {
                 NewLine(ref context);
                 IndentedLine(ref context);
-                context.TemporaryString.Append("ELSE ");
+                WriteValue("ELSE ", ref context);
                 writeExpression(ref context, expression.ElseExpression);
             }
             context.IncreaseIndent();
             NewLine(ref context);
             IndentedLine(ref context);
-            context.TemporaryString.Append("END");
+            WriteValue("END", ref context);
         }
         private static void WriteWildcard(WildcardExpression expression, ref SQLGeneratorContext context)
         {
@@ -425,28 +453,28 @@ namespace SQLQueryBuilder.Builder
                 for (var i = 0; i < expression.TableAlias.Count; i++)
                 {
                     AppendColumn(expression.TableAlias[i], ref context);
-                    context.TemporaryString.Append(".");
+                    WriteValue(".", ref context);
                 }
             }
-            context.TemporaryString.Append("*");
+            WriteValue("*", ref context);
         }
         private static void WriteIsNull(IsNullExpression expression, ref SQLGeneratorContext context)
         {
             writeExpression(ref context, expression.Operand);
-            context.TemporaryString.Append(" IS");
+            WriteValue(" IS", ref context);
 
             if (expression.IsNot)
-                context.TemporaryString.Append(" NOT");
+                WriteValue(" NOT", ref context);
 
-            context.TemporaryString.Append(" NULL");
+            WriteValue(" NULL", ref context);
         }
         private static void WriteLike(LikeExpression expression, ref SQLGeneratorContext context)
         {
             writeExpression(ref context, expression.Operand);
 
             if (expression.IsNot)
-                context.TemporaryString.Append(" NOT");
-            context.TemporaryString.Append(" LIKE ");
+                WriteValue(" NOT", ref context);
+            WriteValue(" LIKE ", ref context);
 
             writeExpression(ref context, expression.Pattern);
         }
@@ -454,35 +482,35 @@ namespace SQLQueryBuilder.Builder
         {
             writeExpression(ref context, expression.Operand);
             if (expression.IsNot)
-                context.TemporaryString.Append(" NOT");
-            context.TemporaryString.Append(" IN (");
+                WriteValue(" NOT", ref context);
+            WriteValue(" IN (", ref context);
 
             if (expression.Values.Count > 1)
             {
                 for (int i = 0; i < expression.Values.Count; i++)
                 {
                     if (i > 0)
-                        context.TemporaryString.Append(", ");
+                        WriteValue(", ", ref context);
 
                     writeExpression(ref context, expression.Values[i]);
                 }
 
-                context.TemporaryString.Append(")");
+                WriteValue(")", ref context);
             }
             else
             {
                 writeExpression(ref context, expression.Values[0]);
-                context.TemporaryString.Append(")");
+                WriteValue(")", ref context);
             }
         }
         private static void WriteBetween(BetweenExpression expression, ref SQLGeneratorContext context)
         {
             writeExpression(ref context, expression.Operand);
             if (expression.IsNot)
-                context.TemporaryString.Append(" NOT");
-            context.TemporaryString.Append(" BETWEEN ");
+                WriteValue(" NOT", ref context);
+            WriteValue(" BETWEEN ", ref context);
             writeExpression(ref context, expression.Lower);
-            context.TemporaryString.Append(" AND ");
+            WriteValue(" AND ", ref context);
             writeExpression(ref context, expression.Upper);
         }
         private static void WriteSelectExpression(SelectExpression expression, ref SQLGeneratorContext context)
@@ -490,7 +518,7 @@ namespace SQLQueryBuilder.Builder
             writeExpression(ref context, expression.Expression);
             if (expression.Alias != null)
             {
-                context.TemporaryString.Append($" AS ");
+                WriteValue($" AS ", ref context);
                 AppendColumn(expression.Alias, ref context);
             }
         }
@@ -498,71 +526,101 @@ namespace SQLQueryBuilder.Builder
         {
             writeExpression(ref context, expression.Expression);
             if (expression.Descending)
-                context.TemporaryString.Append(" DESC");
+                WriteValue(" DESC", ref context);
             else
-                context.TemporaryString.Append(" ASC");
+                WriteValue(" ASC", ref context);
         }
         private static void WriteParenthesized(ParenthesizedExpression expression, ref SQLGeneratorContext context)
         {
-            context.TemporaryString.Append("(");
+            WriteValue("(", ref context);
             writeExpression(ref context, expression.Expression);
-            context.TemporaryString.Append(")");
+            WriteValue(")", ref context);
         }
         #endregion
 
         #region Helper
         private static void NewLine(ref SQLGeneratorContext context)
         {
-            context.TemporaryString.AppendLine();
+            context.TempParametizedSQL.AppendLine();
+            context.TempRawSQL.AppendLine();
         }
         private static void IndentedLine(ref SQLGeneratorContext context)
         {
-            context.TemporaryString.Append('\t', context.Indent);
+            context.TempParametizedSQL.Append('\t', context.Indent);
+            context.TempRawSQL.Append('\t', context.Indent);
         }
-        private static bool TryWriteParameter(object value, ref SQLGeneratorContext context)
+        private static void Negate(object value, ref SQLGeneratorContext context)
         {
-            if (!context.Parameterize)
-                return false;
-
-            string paramName = $"@p{context.GetNextIndex()}";
-
-            context.TemporaryString.Append(paramName);
-            context.TemporaryParameters.Add(paramName, value);
-
-            return true;
-        }
-        private static object Negate(object value)
-        {
-            return value switch
+            switch (value)
             {
-                int v => -v,
-                long v => -v,
-                float v => -v,
-                double v => -v,
-                decimal v => -v,
+                case int v:
+                    WriteValue(-v, DbType.Int32, ref context);
+                    break;
 
-                _ => throw new InvalidOperationException(
-                    $"Cannot negate value of type {value.GetType().Name}.")
-            };
+                case long v:
+                    WriteValue(-v, DbType.Int64, ref context);
+                    break;
+
+                case float v:
+                    WriteValue(-v, DbType.Single, ref context);
+                    break;
+
+                case double v:
+                    WriteValue(-v, DbType.Double, ref context);
+                    break;
+
+                case decimal v:
+                    WriteValue(-v, DbType.Decimal, ref context);
+                    break;
+            }
         }
         private static void AppendColumn(SQLIdentifier identifier, ref SQLGeneratorContext context)
         {
             switch (identifier.Delimiter)
             {
                 case SQLIdentifierDelimiter.Bracket:
-                    context.TemporaryString.Append(SQLParserHelper.EscapeIdentifierBracket(identifier.Value));
+                    WriteValue(SQLParserHelper.EscapeIdentifierBracket(identifier.Value), ref context);
                     break;
                 case SQLIdentifierDelimiter.DoubleQuote:
-                    context.TemporaryString.Append(SQLParserHelper.EscapeIdentifierQuote(identifier.Value));
-                    break;
                 default:
-                    context.TemporaryString.Append(SQLParserHelper.EscapeIdentifierQuote(identifier.Value));
+                    WriteValue(SQLParserHelper.EscapeIdentifierQuote(identifier.Value), ref context);
                     break;
             }
         }
+
         private static void Parameterize(ref SQLGeneratorContext context, bool parameterize = false)
         {
             context.SetParameterize(parameterize);
+        }
+        private static void WriteRaw(object value, ref SQLGeneratorContext context) => context.TempRawSQL.Append(value);
+        private static void WriteValue(object value, ref SQLGeneratorContext context)
+        {
+            context.TempRawSQL.Append(value);
+            context.TempParametizedSQL.Append(value);
+        }
+        private static void WriteValue(object value, DbType type, ref SQLGeneratorContext context)
+        {
+            var escaped = value;
+
+            if (type == DbType.String)
+            {
+                escaped = SQLParserHelper.EscapeStringLiteral((string)value);
+            }
+
+            if (context.Parameterize)
+            {
+                string paramName = $"@p{context.GetNextIndex()}";
+
+                context.TempParametizedSQL.Append(paramName);
+
+                context.TempParameters[paramName] = new QueryParameter(value, type);
+            }
+            else
+            {
+                context.TempParametizedSQL.Append(escaped);
+            }
+
+            context.TempRawSQL.Append(escaped);
         }
         #endregion
         // Currently Unsupported

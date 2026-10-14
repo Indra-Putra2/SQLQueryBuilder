@@ -1,5 +1,5 @@
-﻿using SQLQueryBuilder.Core.SQLExpression;
-using SQLQueryBuilder.SQLEnum.QueryBuilder;
+﻿using SQLQueryBuilder.Core.SQLEnum.QueryBuilder;
+using SQLQueryBuilder.Core.SQLExpression;
 
 internal abstract class SQLTableSource
 {

@@ -1,21 +1,22 @@
-﻿using Dapper;
+﻿using SQLQueryBuilder.Core.QueryBuilder;
+using System.Collections.Frozen;
 
 namespace SQLQueryBuilder.Model
 {
     internal sealed class SQLGeneratorBase
     {
-        public string SQL { get; }
-        public DynamicParameters Parameters { get; }
-        public int ParameterIndex { get; }
+        public string ParametizedSQL { get; }
+        public string RawSQL { get; }
+        public FrozenDictionary<string, QueryParameter> Parameters { get; }
 
         public SQLGeneratorBase(
-            string sql,
-            DynamicParameters parameters,
-            int parameterIndex)
+            string parametizedSQL,
+            string rawSQL,
+            Dictionary<string, QueryParameter> parameters)
         {
-            SQL = sql;
-            Parameters = parameters;
-            ParameterIndex = parameterIndex;
+            ParametizedSQL = parametizedSQL;
+            RawSQL = rawSQL;
+            Parameters = parameters.ToFrozenDictionary();
         }
     }
 }

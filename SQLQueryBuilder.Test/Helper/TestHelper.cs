@@ -1,4 +1,5 @@
-﻿using SQLQueryBuilder.Core.SQLEnum.Tokenizer;
+﻿using SQLQueryBuilder.Core.QueryBuilder;
+using SQLQueryBuilder.Core.SQLEnum.Tokenizer;
 using SQLQueryBuilder.Model;
 using SQLQueryBuilder.Model.Context;
 using System.Text;
@@ -82,7 +83,18 @@ namespace SQLQueryBuilder.Test.Helper
             }
         }
 
-        public static SQLGeneratorContext GetGeneratorContext() => new SQLGeneratorContext(new StringBuilder(), new Dapper.DynamicParameters());
+        public static SQLGeneratorContext GetGeneratorContext() => new SQLGeneratorContext(new StringBuilder(), new StringBuilder());
         public static string CleanString(string input) => Regex.Replace(input, @"\s+", " ").Trim();
+        public static object? GetValue(string param, SQLQueryResult result)
+        {
+            return result.Parameters.TryGetValue(param, out var parameter)
+                ? parameter.Value
+                : null;
+        }
+
+        public static void IsEqual(object expected, string param, SQLQueryResult result)
+        {
+            Assert.Equal(expected, GetValue(param, result));
+        }
     }
 }

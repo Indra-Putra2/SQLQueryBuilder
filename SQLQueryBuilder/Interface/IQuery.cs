@@ -1,5 +1,5 @@
-﻿using SQLQueryBuilder.Model.QueryBuilder;
-using SQLQueryBuilder.SQLEnum.QueryBuilder;
+﻿using SQLQueryBuilder.Core.QueryBuilder;
+using SQLQueryBuilder.Core.SQLEnum.QueryBuilder;
 
 namespace SQLQueryBuilder.Interface
 {

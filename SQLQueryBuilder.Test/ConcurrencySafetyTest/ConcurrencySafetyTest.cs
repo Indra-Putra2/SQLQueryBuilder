@@ -106,8 +106,8 @@ namespace SQLQueryBuilder.Test.ConcurrencySafetyTest
                             .Where(input)
                             .Build();
 
-                        Assert.Contains($"WHERE \"r\".\"price\" < @p1", result.SQL);
-                        Assert.Equal(i, result.Parameters.Get<int>("p1"));
+                        Assert.Contains($"WHERE \"r\".\"price\" < @p1", result.ParameterizedSQL);
+                        TestHelper.IsEqual(i, "@p1", result);
                     }
                 }))
                 .ToArray();

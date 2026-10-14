@@ -1,4 +1,4 @@
-﻿using Dapper;
+﻿using SQLQueryBuilder.Core.QueryBuilder;
 using System.Text;
 
 namespace SQLQueryBuilder.Model.Context
@@ -8,30 +8,33 @@ namespace SQLQueryBuilder.Model.Context
         private SQLGeneratorBase? _base;
 
         public int TemporaryIndex { get; private set; } = 1;
-        public int Indent { get; private set; } = 0; 
+        public int Indent { get; private set; } = 0;
         public bool Parameterize { get; private set; } = false;
         public bool BaseValidated => _base != null;
-        public StringBuilder TemporaryString;
-        public DynamicParameters TemporaryParameters;
+        public StringBuilder TempParametizedSQL;
+        public StringBuilder TempRawSQL;
+        public Dictionary<string, QueryParameter> TempParameters;
 
         public SQLGeneratorContext(
-            StringBuilder stringBuilder,
-            DynamicParameters parameters,
+            StringBuilder parametized,
+            StringBuilder raw,
             int parameterIndex = 1,
             int indent = 0,
             SQLGeneratorBase? generatorBase = null)
         {
             TemporaryIndex = parameterIndex;
             Indent = indent;
-            TemporaryString = stringBuilder;
-            TemporaryParameters = parameters;
+            TempParametizedSQL = parametized;
+            TempRawSQL = raw;
+            TempParameters = new();
             _base = generatorBase;
         }
 
-        public int GetNextIndex() => TemporaryIndex++;
+        public int GetNextIndex() => (_base?.Parameters.Count ?? 0) + TempParameters.Count + 1;
         public void IncreaseIndent() => Indent++;
         public void DecreaseIndent() => Indent = Math.Max(0, Indent - 1);
         public void SetParameterize(bool val) => Parameterize = val;
+        public SQLGeneratorBase? GetBase => _base;
         public void SetBase()
         {
             if (_base != null)
@@ -39,9 +42,9 @@ namespace SQLQueryBuilder.Model.Context
                     "Base has already been set.");
 
             _base = new SQLGeneratorBase(
-                TemporaryString.ToString(),
-                CloneParameters(TemporaryParameters),
-                TemporaryIndex);
+                TempParametizedSQL.ToString(),
+                TempRawSQL.ToString(),
+                TempParameters);
         }
 
         public void RefreshToBase()
@@ -50,17 +53,11 @@ namespace SQLQueryBuilder.Model.Context
                 throw new InvalidOperationException(
                     "Base has not been set.");
 
-            TemporaryIndex = _base.ParameterIndex;
+            TemporaryIndex = _base.Parameters.Count;
 
-            TemporaryString.Clear().Append(_base.SQL);
-            TemporaryParameters = CloneParameters(_base.Parameters);
-        }
-
-        private static DynamicParameters CloneParameters(DynamicParameters source)
-        {
-            var result = new DynamicParameters();
-            result.AddDynamicParams(source);
-            return result;
+            TempParametizedSQL.Clear().Append(_base.ParametizedSQL);
+            TempRawSQL.Clear().Append(_base.RawSQL);
+            TempParameters.Clear();
         }
     }
 }

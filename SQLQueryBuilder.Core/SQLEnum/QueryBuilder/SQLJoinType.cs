@@ -1,4 +1,4 @@
-﻿namespace SQLQueryBuilder.SQLEnum.QueryBuilder
+﻿namespace SQLQueryBuilder.Core.SQLEnum.QueryBuilder
 {
     public enum SQLJoinType
     {

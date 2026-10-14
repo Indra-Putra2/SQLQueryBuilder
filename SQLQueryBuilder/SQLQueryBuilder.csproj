@@ -4,13 +4,24 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+	  
+	  <!-- NuGet package metadata -->
+	  <PackageId>TruSql</PackageId>
+	  <Version>1.0.0</Version>
+	  <Description>TruSql is a SQL query builder for dynamically constructing and validating queries at runtime.</Description>
+	  <PackageOutputPath>./package</PackageOutputPath>
+	  <Authors>Indra</Authors>
+	  <PackageLicenseExpression>MIT</PackageLicenseExpression>
+	  <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
-	<ProjectReference Include="..\SQLQueryBuilder.Core\SQLQueryBuilder.Core.csproj" />
-	<PackageReference Include="Dapper" Version="2.1.72" />
+	<None Include="README.md" Pack="true" PackagePath="\" />
 	<InternalsVisibleTo Include="SQLQueryBuilder.Test" />
 	<InternalsVisibleTo Include="SQLBuilderShowcase" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\SQLQueryBuilder.Core\SQLQueryBuilder.Core.csproj" />
+  </ItemGroup>
 </Project>

@@ -1,4 +1,4 @@
-﻿using SQLQueryBuilder.SQLEnum.QueryBuilder;
+﻿using SQLQueryBuilder.Core.SQLEnum.QueryBuilder;
 
 namespace SQLQueryBuilder.Model.QueryBuilder
 {

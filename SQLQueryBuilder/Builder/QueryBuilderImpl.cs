@@ -1,11 +1,11 @@
-﻿using Dapper;
-using SQLQueryBuilder.Builder.SQLParser;
+﻿using SQLQueryBuilder.Builder.SQLParser;
+using SQLQueryBuilder.Core.QueryBuilder;
+using SQLQueryBuilder.Core.SQLEnum.QueryBuilder;
 using SQLQueryBuilder.Core.SQLExpression;
 using SQLQueryBuilder.Helper;
 using SQLQueryBuilder.Interface;
 using SQLQueryBuilder.Model.Context;
 using SQLQueryBuilder.Model.QueryBuilder;
-using SQLQueryBuilder.SQLEnum.QueryBuilder;
 using System.Text;
 
 namespace SQLQueryBuilder.Builder
@@ -21,8 +21,7 @@ namespace SQLQueryBuilder.Builder
         internal QueryBuilderImpl()
         {
             _GeneratorContext = new SQLGeneratorContext(
-                new StringBuilder(),
-                new DynamicParameters());
+                new StringBuilder(), new StringBuilder());
 
             _sQLQuery = new SQLQueryRaw
             {
@@ -44,14 +43,14 @@ namespace SQLQueryBuilder.Builder
             // context Setup
             _sQLQuery = sQLQuery.ClearFilter();
 
-            var sb = new StringBuilder().Append(baseContext.TemporaryString);
-            var param = new DynamicParameters();
-            param.AddDynamicParams(baseContext.TemporaryParameters);
+            var parametized = new StringBuilder().Append(baseContext.TempParametizedSQL);
+            var raw = new StringBuilder().Append(baseContext.TempRawSQL);
 
             _GeneratorContext = baseContext with
             {
-                TemporaryString = sb,
-                TemporaryParameters = param,
+                TempParametizedSQL = parametized,
+                TempRawSQL = raw,
+                TempParameters = new()
             };
         }
         public IQuerySelect From<T>(string tableAlias)
