@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="../HardwareInventoryLibrary/HardwareInventoryLibrary/HardwareInventoryLibrary.csproj" />
+  <Project Path="TruSql.Core/TruSql.Core.csproj" />
+  <Project Path="TruSql.Test/TruSql.Test.csproj" />
+  <Project Path="TruSql/TruSql.csproj" />
+</Solution>
